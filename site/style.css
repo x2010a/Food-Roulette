@@ -146,9 +146,19 @@ select {
   border-radius: 999px; background: var(--accent); color: var(--accent-ink);
   font-size: 12px; line-height: 20px; text-align: center;
 }
+.badge[hidden] { display: none; }
 .chip:has(input:checked) { border-color: var(--accent); }
 
 .field { display: block; margin-top: 12px; }
+.field.inline { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.field.inline select { min-height: 40px; padding: 6px 12px; }
+.ticker {
+  text-align: center;
+  margin: 4px 0 2px;
+  min-height: 1.4em;
+  font: 800 clamp(18px, 5.5vw, 24px)/1.2 "Bricolage Grotesque", Inter, sans-serif;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .field input { width: 100%; accent-color: var(--accent); }
 
 .filters { margin-top: 8px; }

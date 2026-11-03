@@ -2,7 +2,7 @@
 (() => {
   "use strict";
 
-  const MAX_SLICES = 10;
+  const LABEL_LIMIT = 24;      // above this many slices, names go in the ticker instead
   const WALK_M_PER_MIN = 80;
   const REPEAT_DAYS = 7;
   const MAX_SUGGESTIONS = 8;
@@ -74,6 +74,7 @@
     halal: $("halal"), veg: $("veg"), noRepeat: $("noRepeat"), mixAll: $("mixAll"),
     filterCount: $("filterCount"),
     spinBtn: $("spinBtn"), shuffleBtn: $("shuffleBtn"), count: $("count"),
+    sliceCount: $("sliceCount"), ticker: $("ticker"),
     result: $("result"), rName: $("rName"), rMeta: $("rMeta"), rAddr: $("rAddr"),
     rGo: $("rGo"), rAgain: $("rAgain"), rClosed: $("rClosed"), updated: $("updated"),
   };
@@ -171,9 +172,13 @@
     el.count.textContent = candidates.length
       ? `${candidates.length} place${candidates.length === 1 ? "" : "s"} within ${fmtDist(radius)} ${where}`
       : `Nothing found within ${fmtDist(radius)} ${where}. Try a bigger radius or fewer filters.`;
-    el.shuffleBtn.disabled = candidates.length <= MAX_SLICES;
+    const limit = sliceLimit();
+    if (candidates.length > limit) el.count.textContent += ` · ${limit} on the wheel`;
+    el.shuffleBtn.disabled = candidates.length <= limit;
     pickSlices();
   }
+
+  const sliceLimit = () => (+el.sliceCount.value || Infinity);
 
   function updateFilterBadge() {
     const n = checkedValues("cz").size + checkedValues("cr").size +
@@ -189,8 +194,9 @@
       const j = Math.floor(Math.random() * (i + 1));
       [pool[i], pool[j]] = [pool[j], pool[i]];
     }
-    slices = pool.slice(0, MAX_SLICES);
+    slices = pool.slice(0, sliceLimit());
     el.spinBtn.disabled = slices.length === 0;
+    el.ticker.textContent = "";
     drawWheel();
   }
 
@@ -246,15 +252,17 @@
       ctx.closePath();
       ctx.fillStyle = colors[c];
       ctx.fill();
-      ctx.strokeStyle = surface;
-      ctx.lineWidth = Math.max(2, W / 180);
-      ctx.stroke();
+      if (n <= 90) {                      // dividers vanish into mush beyond this
+        ctx.strokeStyle = surface;
+        ctx.lineWidth = Math.max(1, W / (n > 30 ? 400 : 180));
+        ctx.stroke();
+      }
 
-      // label
+      if (n > LABEL_LIMIT) continue;      // too thin for text; the ticker shows names
       ctx.save();
       ctx.rotate((i + 0.5) * arc);
       ctx.fillStyle = darkInk[c] ? cssVar("--slice-ink-dark") : cssVar("--slice-ink-light");
-      const fontPx = Math.round(W * (n > 8 ? 0.036 : 0.042));
+      const fontPx = Math.round(W * (n > 16 ? 0.028 : n > 8 ? 0.036 : 0.042));
       ctx.font = `600 ${fontPx}px Inter, system-ui, sans-serif`;
       ctx.textAlign = "right";
       ctx.textBaseline = "middle";
@@ -299,6 +307,9 @@
       const t = Math.min(1, (now - t0) / duration);
       rotation = start + (end - start) * ease(t);
       drawWheel();
+      // show the name currently under the pointer
+      const under = Math.floor((((-Math.PI / 2 - rotation) % TAU) + TAU) % TAU / arc) % n;
+      if (el.ticker.textContent !== slices[under].name) el.ticker.textContent = slices[under].name;
       if (t < 1) requestAnimationFrame(frame);
       else {
         rotation = end % TAU;
@@ -535,6 +546,14 @@
   }
   el.radius.addEventListener("input", () => { updateRadiusLabel(); refresh(); });
   document.querySelectorAll(".filters input").forEach((i) => i.addEventListener("change", refresh));
+
+  el.sliceCount.value = String(store.get("fr_slices", 10));
+  if (!el.sliceCount.value) el.sliceCount.value = "10";
+  el.sliceCount.addEventListener("change", () => {
+    store.set("fr_slices", +el.sliceCount.value);
+    el.result.hidden = true;
+    refresh();
+  });
 
   el.spinBtn.addEventListener("click", spin);
   el.shuffleBtn.addEventListener("click", () => { el.result.hidden = true; pickSlices(); });

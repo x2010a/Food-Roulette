@@ -40,6 +40,17 @@
         <input id="radius" type="range" min="200" max="3000" step="100" value="800">
       </label>
 
+      <label class="field inline">
+        <span>Places on the wheel</span>
+        <select id="sliceCount">
+          <option value="6">6</option>
+          <option value="10" selected>10</option>
+          <option value="20">20</option>
+          <option value="50">50</option>
+          <option value="0">All</option>
+        </select>
+      </label>
+
       <details class="filters">
         <summary>Filters <span id="filterCount" class="badge" hidden></span></summary>
         <h3 class="fhead">Cuisine <span class="muted">(pick any)</span></h3>
@@ -88,6 +99,7 @@
       <canvas id="wheel" width="360" height="360" aria-hidden="true"></canvas>
       <button id="spinBtn" class="spin" type="button" disabled>SPIN</button>
     </section>
+    <p id="ticker" class="ticker" aria-hidden="true"></p>
     <p id="count" class="center muted small" role="status">Loading places…</p>
     <div class="center">
       <button id="shuffleBtn" class="btn ghost small-btn" type="button" disabled>🔀 New set of places</button>
