@@ -34,6 +34,7 @@
         <ul id="roadList" class="suggest" role="listbox" hidden></ul>
       </div>
       <p id="locStatus" class="muted small" role="status"></p>
+      <div id="captcha" class="captcha"></div>
 
       <label class="field">
         <span>Within <strong id="radiusLabel">800 m</strong> <span class="muted" id="walkLabel">(~10 min walk)</span></span>
@@ -101,6 +102,7 @@
     </section>
     <p id="ticker" class="ticker" aria-hidden="true"></p>
     <p id="count" class="center muted small" role="status">Loading places…</p>
+    <p id="gNote" class="center muted small" hidden></p>
     <div class="center">
       <button id="shuffleBtn" class="btn ghost small-btn" type="button" disabled>🔀 New set of places</button>
     </div>
@@ -110,6 +112,8 @@
       <h2 id="rName"></h2>
       <p id="rMeta" class="muted"></p>
       <p id="rAddr" class="small"></p>
+      <p id="rFeat" class="small feat" hidden></p>
+      <p id="rGoogle" class="small gattr" hidden>Place info from <span class="gmaps">Google Maps</span></p>
       <div class="actions">
         <a id="rGo" class="btn primary" target="_blank" rel="noopener">Let's go → Google Maps</a>
         <button id="rAgain" class="btn ghost" type="button">Spin again</button>
@@ -118,11 +122,12 @@
     </section>
 
     <footer class="foot small muted">
-      <p>Place data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>. <span id="updated"></span></p>
+      <p>Place data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>, hawker centres from <a href="https://data.gov.sg/datasets/d_4a086da0a5553be1d89383cd90d07ecd/view" target="_blank" rel="noopener">NEA via data.gov.sg</a>. Some places from Google Maps (marked on each result). <span id="updated"></span></p>
       <p>Spot something wrong? <a href="https://www.openstreetmap.org/" target="_blank" rel="noopener">Fix it on OpenStreetMap</a> and it shows up here after the weekly refresh.</p>
     </footer>
   </main>
 
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

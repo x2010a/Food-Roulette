@@ -237,6 +237,14 @@ fieldset { border: 0; padding: 0; margin: 8px 0 0; display: flex; flex-wrap: wra
   overflow-wrap: anywhere;
 }
 .result p { margin: 4px 0; }
+.captcha { display: flex; justify-content: center; }
+.captcha:empty { display: none; }
+.gattr { color: var(--muted); margin-top: 6px; }
+.gattr[hidden], #gNote[hidden] { display: none; }
+.gmaps { font-family: Roboto, Arial, sans-serif; font-weight: 500; color: var(--ink); }
+.feat { color: var(--muted); }
+.feat a { color: var(--accent); font-weight: 600; }
+.feat[hidden] { display: none; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 14px; }
 .actions .btn { flex: 1 1 180px; }
 .link { background: none; border: 0; color: var(--muted); text-decoration: underline; font: inherit; font-size: 14px; margin-top: 12px; cursor: pointer; padding: 8px; }

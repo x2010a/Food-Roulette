@@ -23,7 +23,7 @@
 
   const TYPE_LABEL = {
     restaurant: "Restaurant", fast_food: "Fast food", cafe: "Café",
-    food_court: "Hawker / food court", ice_cream: "Dessert",
+    food_court: "Hawker / food court", ice_cream: "Dessert", stall: "Hawker stall",
   };
   const CUISINE_LABEL = {
     cn: "Chinese", ml: "Malay & Indonesian", in: "Indian", th: "Thai",
@@ -55,6 +55,10 @@
   let places = [];
   let roads = null;             // loaded on demand
   let roadsPromise = null;
+  let markDataReady;
+  const dataReady = new Promise((r) => { markDataReady = r; });
+  let googleExtra = [];             // Google places not already in our data (this session only)
+  const googleUri = new Map();      // our place id -> Google Maps link, when Google knows it too
   let origin = null;            // {points: [[lat, lon], ...], label, kind}
   let candidates = [];
   let slices = [];
@@ -76,7 +80,7 @@
     spinBtn: $("spinBtn"), shuffleBtn: $("shuffleBtn"), count: $("count"),
     sliceCount: $("sliceCount"), ticker: $("ticker"),
     result: $("result"), rName: $("rName"), rMeta: $("rMeta"), rAddr: $("rAddr"),
-    rGo: $("rGo"), rAgain: $("rAgain"), rClosed: $("rClosed"), updated: $("updated"),
+    rGo: $("rGo"), rFeat: $("rFeat"), rGoogle: $("rGoogle"), gNote: $("gNote"), rAgain: $("rAgain"), rClosed: $("rClosed"), updated: $("updated"),
   };
 
   // ---------- geometry ----------
@@ -114,6 +118,7 @@
         cz: get(r, "cz") ? get(r, "cz").split(",") : [],
         cr: get(r, "cr") ? get(r, "cr").split(",") : [],
         mix: !!get(r, "mix"),
+        addr: get(r, "addr"), stalls: get(r, "stalls"), f: get(r, "f") || [],
       }));
       if (json.updated) el.updated.textContent = `Data updated ${json.updated}.`;
       refresh();
@@ -121,6 +126,7 @@
       el.count.textContent = "Couldn't load the place list. Has the data refresh run yet?";
       console.error(e);
     }
+    markDataReady();
   }
 
   function loadRoads() {
@@ -158,8 +164,9 @@
     const overlaps = (list, want) => list.some((x) => want.has(x));
 
     candidates = [];
-    for (const p of places) {
-      if (!types.has(p.type) || hidden.has(p.id)) continue;
+    for (const p of googleExtra.length ? places.concat(googleExtra) : places) {
+      // individual hawker stalls fall under the "Hawker & food courts" checkbox
+      if (!types.has(p.type === "stall" ? "food_court" : p.type) || hidden.has(p.id)) continue;
       if (el.halal.checked && !yes(p.halal)) continue;
       if (el.veg.checked && !yes(p.veg)) continue;
       if (el.noRepeat.checked && recent[p.id] > cutoff) continue;
@@ -324,7 +331,10 @@
 
   // ---------- result ----------
   function mapsUrl(p) {
-    const q = [p.name, p.street, p.postcode, "Singapore"].filter(Boolean).join(" ");
+    const exact = p.uri || googleUri.get(p.id);   // Google's own link for this exact place
+    if (exact) return exact;
+    const where = p.addr || [p.street, p.postcode, "Singapore"].filter(Boolean).join(" ") || "Singapore";
+    const q = `${p.name} ${where}`;
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
   }
 
@@ -333,15 +343,29 @@
     current = p;
     el.rName.textContent = p.name;
     const bits = [TYPE_LABEL[p.type] || "Food"];
-    if (p.mix) bits.push("Many stalls");
+    if (p.mix) bits.push(p.stalls ? `${p.stalls} stalls` : "Many stalls");
     else if (p.cz.length) bits.push(p.cz.map((c) => CUISINE_LABEL[c]).join(", "));
     else if (p.cuisine) bits.push(p.cuisine);
     const away = origin.kind === "road" ? "from the road" : "away";
     bits.push(`${fmtDist(p.dist)} ${away} · ~${walkMin(p.dist)} min walk`);
     el.rMeta.textContent = bits.join(" · ");
-    const addr = [p.street, p.postcode && `S(${p.postcode})`].filter(Boolean).join(" ");
+    const addr = p.addr || [p.street, p.postcode && `S(${p.postcode})`].filter(Boolean).join(" ");
     el.rAddr.textContent = [addr, p.hours && `Hours (from OSM): ${p.hours}`].filter(Boolean).join(" — ");
     el.rAddr.hidden = !el.rAddr.textContent;
+    // "Featured on Eatbook (2026)" links back to the articles this place came from
+    el.rFeat.replaceChildren();
+    if (p.f.length) {
+      el.rFeat.append("Featured on ");
+      p.f.forEach(([site, url, year], i) => {
+        if (i) el.rFeat.append(i === p.f.length - 1 ? " and " : ", ");
+        const a = document.createElement("a");
+        a.href = url; a.target = "_blank"; a.rel = "noopener";
+        a.textContent = year ? `${site} (${year})` : site;
+        el.rFeat.append(a);
+      });
+    }
+    el.rFeat.hidden = !p.f.length;
+    el.rGoogle.hidden = !p.google;          // Google requires attribution for its data
     el.rGo.href = mapsUrl(p);
     el.result.hidden = false;
     el.result.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -365,12 +389,189 @@
     refresh();
   });
 
+  // ---------- Google places (optional, via the capped relay) ----------
+  // One search per location, kept in memory for this visit: re-spins and filter
+  // changes never call Google again. If the relay says the monthly cap is reached,
+  // the app simply carries on with the free data.
+  const GOOGLE = ((window.FR_CONFIG || {}).googleProxy || "").replace(/\/$/, "");
+  const googleCache = new Map();    // "lat,lon,radius" -> results
+  let googleTimer = null;
+  let googleCapped = false;
+  let rules = null;                 // cuisine keyword rules from data/classify.json
+
+  const G_CUISINE = {
+    chinese_restaurant: "cn", indonesian_restaurant: "ml", indian_restaurant: "in", thai_restaurant: "th",
+    japanese_restaurant: "jp", ramen_restaurant: "jp", sushi_restaurant: "jp", korean_restaurant: "kr",
+    american_restaurant: "ws", hamburger_restaurant: "ws", pizza_restaurant: "ws", italian_restaurant: "ws",
+    french_restaurant: "ws", steak_house: "ws", brunch_restaurant: "ws", sandwich_shop: "ws",
+    vietnamese_restaurant: "ot", mexican_restaurant: "ot", middle_eastern_restaurant: "ot",
+    turkish_restaurant: "ot", lebanese_restaurant: "ot", greek_restaurant: "ot", spanish_restaurant: "ot",
+    mediterranean_restaurant: "ot", brazilian_restaurant: "ot", african_restaurant: "ot",
+  };
+  const G_CRAVING = {
+    ramen_restaurant: "n", sushi_restaurant: "r", hamburger_restaurant: "b", pizza_restaurant: "b",
+    sandwich_shop: "b", bakery: "b", steak_house: "l", barbecue_restaurant: "l", seafood_restaurant: "l",
+  };
+  const STOP = new Set(["the", "restaurant", "stall", "cafe", "café", "kitchen", "eating", "house", "food",
+    "centre", "center", "market", "and", "&", "pte", "ltd", "singapore", "sg", "@"]);
+
+  function nameKey(n) {
+    const words = (n || "").toLowerCase().match(/[a-z0-9]+/g) || [];
+    const kept = words.filter((w) => !STOP.has(w));
+    return new Set(kept.length ? kept : words);
+  }
+  function similarNames(a, b) {
+    const A = nameKey(a), B = nameKey(b);
+    if (!A.size || !B.size) return false;
+    const inter = [...A].filter((w) => B.has(w)).length;
+    if (inter === A.size || inter === B.size) return true;
+    return inter / (A.size + B.size - inter) >= 0.5;
+  }
+
+  async function loadRules() {
+    if (rules) return rules;
+    try {
+      const r = await fetch("data/classify.json", { cache: "no-cache" });
+      const j = await r.json();
+      const compile = (o) => Object.entries(o).map(([k, v]) => [k, new RegExp(v)]);
+      rules = { cuisine: compile(j.cuisine), craving: compile(j.craving), mixed: new RegExp(j.mixed) };
+    } catch { rules = { cuisine: [], craving: [], mixed: /$^/ }; }
+    return rules;
+  }
+
+  function fromGoogle(g) {
+    const types = new Set([g.type, ...(g.types || [])]);
+    const lname = g.name.toLowerCase();
+    const has = (...t) => t.some((x) => types.has(x));
+    const mix = has("food_court") || rules.mixed.test(lname);
+    const type = has("food_court") ? "food_court"
+      : has("fast_food_restaurant", "hamburger_restaurant", "sandwich_shop") ? "fast_food"
+      : has("ice_cream_shop", "dessert_shop") ? "ice_cream"
+      : has("cafe", "coffee_shop", "bakery", "tea_house") && !has("restaurant") ? "cafe"
+      : "restaurant";
+    const cz = new Set([...types].map((t) => G_CUISINE[t]).filter(Boolean));
+    if (!cz.size) for (const [k, rx] of rules.cuisine) if (rx.test(lname)) cz.add(k);
+    const cr = new Set([...types].map((t) => G_CRAVING[t]).filter(Boolean));
+    for (const [k, rx] of rules.craving) if (rx.test(lname)) cr.add(k);
+    return {
+      id: "g:" + g.gid, name: g.name, type, cuisine: null, lat: g.lat, lon: g.lon,
+      halal: null, veg: has("vegetarian_restaurant", "vegan_restaurant") ? "yes" : null,
+      street: null, postcode: null, hours: null, addr: g.addr, stalls: null, f: [],
+      cz: [...cz], cr: [...cr], mix, uri: g.uri, google: true,
+    };
+  }
+
+  // Where to search: the chosen point, or the middle of the chosen road.
+  function googleQuery() {
+    const pts = origin.points;
+    const lat = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+    const lon = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+    const extent = Math.max(...pts.map((p) => distanceM(lat, lon, p[0], p[1])));
+    const radius = Math.min(5000, Math.round(+el.radius.value + extent));
+    return { lat, lon, radius };
+  }
+
+  function scheduleGoogle() {
+    if (!GOOGLE || googleCapped || !origin) return;
+    clearTimeout(googleTimer);
+    googleTimer = setTimeout(fetchGoogle, 700);   // wait until the slider stops moving
+  }
+
+  // ---- human check (Cloudflare Turnstile): one fresh token per Google search ----
+  const TS_KEY = (window.FR_CONFIG || {}).turnstileSiteKey || "";
+  let tsWidget = null, tsLoading = null, tsWaiting = null;
+
+  function loadTurnstile() {
+    if (!tsLoading) {
+      tsLoading = new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+        s.async = true;
+        s.onload = () => resolve(window.turnstile);
+        s.onerror = reject;
+        document.head.append(s);
+      });
+    }
+    return tsLoading;
+  }
+
+  async function humanToken() {
+    if (!TS_KEY) return "";                         // check not configured
+    try {
+      const ts = await loadTurnstile();
+      const got = new Promise((resolve) => { tsWaiting = resolve; });
+      const done = (t) => { if (tsWaiting) { tsWaiting(t); tsWaiting = null; } };
+      if (tsWidget === null) {
+        tsWidget = ts.render("#captcha", {
+          sitekey: TS_KEY,
+          execution: "execute",            // only runs when we ask for a token
+          appearance: "interaction-only",  // invisible unless a click is really needed
+          callback: (t) => done(t),
+          "error-callback": () => done(null),
+          "timeout-callback": () => done(null),
+        });
+      } else {
+        ts.reset(tsWidget);                // tokens are single-use
+      }
+      ts.execute(tsWidget);
+      // give a human up to 60 s to tick the box if Turnstile asks
+      return await Promise.race([got, new Promise((r) => setTimeout(() => r(null), 60000))]);
+    } catch {
+      return null;
+    }
+  }
+
+  async function fetchGoogle() {
+    const q = googleQuery();
+    // reuse an earlier search that already covers this area
+    for (const [key, res] of googleCache) {
+      const [la, lo, ra] = key.split(",").map(Number);
+      if (distanceM(la, lo, q.lat, q.lon) + q.radius <= ra + 150) { applyGoogle(res); return; }
+    }
+    const key = `${q.lat.toFixed(4)},${q.lon.toFixed(4)},${q.radius}`;
+    try {
+      await loadRules();
+      const token = await humanToken();
+      if (token === null) return;                     // check failed: stay on free data
+      const tokenParam = token ? `&token=${encodeURIComponent(token)}` : "";
+      const r = await fetch(`${GOOGLE}/nearby?lat=${q.lat.toFixed(5)}&lon=${q.lon.toFixed(5)}&radius=${q.radius}${tokenParam}`);
+      const j = await r.json();
+      if (j.capped) {
+        googleCapped = true;
+        el.gNote.textContent = "Extra Google places are paused until next month.";
+        el.gNote.hidden = false;
+        return;
+      }
+      const res = (j.places || []).map(fromGoogle);
+      googleCache.set(key, res);
+      applyGoogle(res);
+    } catch (e) {
+      console.warn("Google places unavailable", e);   // keep going with free data
+    }
+  }
+
+  async function applyGoogle(results) {
+    await dataReady;                 // compare against the full place list, never a half-loaded one
+    const extra = new Map(googleExtra.map((p) => [p.id, p]));
+    for (const g of results) {
+      if (extra.has(g.id)) continue;
+      // Already in our data? Just remember Google's exact Maps link for it.
+      const twin = places.find((p) => Math.abs(p.lat - g.lat) < 0.001 && Math.abs(p.lon - g.lon) < 0.001 &&
+        distanceM(p.lat, p.lon, g.lat, g.lon) <= 80 && similarNames(p.name, g.name));
+      if (twin) googleUri.set(twin.id, g.uri);
+      else extra.set(g.id, g);
+    }
+    googleExtra = [...extra.values()];
+    refresh();
+  }
+
   // ---------- location: areas & GPS ----------
   function setOrigin(o) {
     origin = o;
     if (o.kind !== "gps") store.set("fr_origin", { kind: o.kind, name: o.label });
     el.result.hidden = true;
     refresh();
+    scheduleGoogle();
   }
 
   function useArea(name) {
@@ -544,7 +745,7 @@
     el.radiusLabel.textContent = fmtDist(m);
     el.walkLabel.textContent = `(~${walkMin(m)} min walk)`;
   }
-  el.radius.addEventListener("input", () => { updateRadiusLabel(); refresh(); });
+  el.radius.addEventListener("input", () => { updateRadiusLabel(); refresh(); scheduleGoogle(); });
   document.querySelectorAll(".filters input").forEach((i) => i.addEventListener("change", refresh));
 
   el.sliceCount.value = String(store.get("fr_slices", 10));
