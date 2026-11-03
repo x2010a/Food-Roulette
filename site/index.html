@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Food Roulette</title>
+  <meta name="description" content="Can't decide what to eat? Spin the wheel and let it pick a place near you in Singapore.">
+  <meta name="theme-color" content="#f5efe4" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1b1814" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎡</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="top">
+      <h1>Food<br>Roulette</h1>
+      <p class="tag">Can't decide? Let the wheel pick.</p>
+    </header>
+
+    <section class="panel" aria-label="Where are you?">
+      <div class="row">
+        <button id="locateBtn" class="btn ghost" type="button">📍 Use my location</button>
+        <select id="areaSelect" aria-label="Or pick an area"></select>
+      </div>
+      <div class="combo">
+        <label for="roadInput" class="sr-only">Or type a road name</label>
+        <input id="roadInput" type="text" placeholder="🔎 Or type a road, e.g. Amoy St, AMK Ave 3"
+               autocomplete="off" autocapitalize="words" spellcheck="false"
+               role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="roadList">
+        <button id="roadClear" class="clear" type="button" aria-label="Clear road" hidden>×</button>
+        <ul id="roadList" class="suggest" role="listbox" hidden></ul>
+      </div>
+      <p id="locStatus" class="muted small" role="status"></p>
+
+      <label class="field">
+        <span>Within <strong id="radiusLabel">800 m</strong> <span class="muted" id="walkLabel">(~10 min walk)</span></span>
+        <input id="radius" type="range" min="200" max="3000" step="100" value="800">
+      </label>
+
+      <details class="filters">
+        <summary>Filters <span id="filterCount" class="badge" hidden></span></summary>
+        <h3 class="fhead">Cuisine <span class="muted">(pick any)</span></h3>
+        <fieldset id="cuisineChips">
+          <legend class="sr-only">Cuisine</legend>
+          <label class="chip"><input type="checkbox" name="cz" value="cn"> Chinese</label>
+          <label class="chip"><input type="checkbox" name="cz" value="ml"> Malay &amp; Indo</label>
+          <label class="chip"><input type="checkbox" name="cz" value="in"> Indian</label>
+          <label class="chip"><input type="checkbox" name="cz" value="th"> Thai</label>
+          <label class="chip"><input type="checkbox" name="cz" value="jp"> Japanese</label>
+          <label class="chip"><input type="checkbox" name="cz" value="kr"> Korean</label>
+          <label class="chip"><input type="checkbox" name="cz" value="ws"> Western</label>
+          <label class="chip"><input type="checkbox" name="cz" value="ot"> Others</label>
+        </fieldset>
+        <h3 class="fhead">Craving</h3>
+        <fieldset id="cravingChips">
+          <legend class="sr-only">Craving</legend>
+          <label class="chip"><input type="checkbox" name="cr" value="r"> 🍚 Rice</label>
+          <label class="chip"><input type="checkbox" name="cr" value="n"> 🍜 Noodles</label>
+          <label class="chip"><input type="checkbox" name="cr" value="b"> 🍞 Bread &amp; burgers</label>
+          <label class="chip"><input type="checkbox" name="cr" value="l"> 🥗 Light / low-carb</label>
+        </fieldset>
+        <label class="chip mixchip"><input type="checkbox" id="mixAll" checked> Hawker centres &amp; coffee shops match any cuisine</label>
+        <p class="muted small">Cuisine and craving are best guesses from OpenStreetMap tags and place names, so some places are missed or mislabelled.</p>
+        <h3 class="fhead">Place type &amp; diet</h3>
+        <fieldset>
+          <legend class="sr-only">Place types</legend>
+          <label class="chip"><input type="checkbox" name="type" value="restaurant" checked> Restaurants</label>
+          <label class="chip"><input type="checkbox" name="type" value="food_court" checked> Hawker &amp; food courts</label>
+          <label class="chip"><input type="checkbox" name="type" value="fast_food" checked> Fast food</label>
+          <label class="chip"><input type="checkbox" name="type" value="cafe" checked> Cafés</label>
+          <label class="chip"><input type="checkbox" name="type" value="ice_cream"> Dessert</label>
+        </fieldset>
+        <fieldset>
+          <legend class="sr-only">Diet</legend>
+          <label class="chip"><input type="checkbox" id="halal"> Halal only</label>
+          <label class="chip"><input type="checkbox" id="veg"> Vegetarian</label>
+          <label class="chip"><input type="checkbox" id="noRepeat" checked> Skip places from the last 7 days</label>
+        </fieldset>
+        <p class="muted small">Halal and vegetarian only include places tagged as such on OpenStreetMap, so the list may be short.</p>
+      </details>
+    </section>
+
+    <section class="wheel-wrap" aria-label="Wheel">
+      <div class="pointer" aria-hidden="true"></div>
+      <canvas id="wheel" width="360" height="360" aria-hidden="true"></canvas>
+      <button id="spinBtn" class="spin" type="button" disabled>SPIN</button>
+    </section>
+    <p id="count" class="center muted small" role="status">Loading places…</p>
+    <div class="center">
+      <button id="shuffleBtn" class="btn ghost small-btn" type="button" disabled>🔀 New set of places</button>
+    </div>
+
+    <section id="result" class="result" hidden aria-live="polite">
+      <p class="eyebrow">You're eating at</p>
+      <h2 id="rName"></h2>
+      <p id="rMeta" class="muted"></p>
+      <p id="rAddr" class="small"></p>
+      <div class="actions">
+        <a id="rGo" class="btn primary" target="_blank" rel="noopener">Let's go → Google Maps</a>
+        <button id="rAgain" class="btn ghost" type="button">Spin again</button>
+      </div>
+      <button id="rClosed" class="link" type="button">Closed or not here? Hide it</button>
+    </section>
+
+    <footer class="foot small muted">
+      <p>Place data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>. <span id="updated"></span></p>
+      <p>Spot something wrong? <a href="https://www.openstreetmap.org/" target="_blank" rel="noopener">Fix it on OpenStreetMap</a> and it shows up here after the weekly refresh.</p>
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
