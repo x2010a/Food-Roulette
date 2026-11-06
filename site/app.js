@@ -163,6 +163,9 @@
     const yes = (v) => v === "yes" || v === "only";
     const overlaps = (list, want) => list.some((x) => want.has(x));
 
+    const wantSrc = checkedValues("src");
+    const srcCount = { osm: 0, nea: 0, google: 0, list: 0 };
+
     candidates = [];
     for (const p of googleExtra.length ? places.concat(googleExtra) : places) {
       // individual hawker stalls fall under the "Hawker & food courts" checkbox
@@ -173,7 +176,14 @@
       if (wantCz.size && !(overlaps(p.cz, wantCz) || (p.mix && mixOk))) continue;
       if (wantCr.size && !(overlaps(p.cr, wantCr) || (p.mix && mixOk))) continue;
       const d = distanceToOrigin(p);
-      if (d <= radius) candidates.push({ ...p, dist: d });
+      if (d > radius) continue;
+      const src = srcOf(p);
+      srcCount[src]++;                      // counted even when that source is switched off
+      if (wantSrc.has(src)) candidates.push({ ...p, dist: d });
+    }
+    for (const [k, n] of Object.entries(srcCount)) {
+      const span = document.querySelector(`[data-src-count="${k}"]`);
+      if (span) span.textContent = `(${n})`;
     }
     const where = origin.kind === "road" ? `along ${origin.label}` : `of ${origin.label}`;
     el.count.textContent = candidates.length
@@ -187,10 +197,21 @@
 
   const sliceLimit = () => (+el.sliceCount.value || Infinity);
 
+  // Where a place came from, from its id: g: Google, h NEA (added), b your lists, else OpenStreetMap.
+  // (NEA centres that matched an OpenStreetMap place keep the OpenStreetMap id.)
+  function srcOf(p) {
+    const id = String(p.id);
+    if (id.startsWith("g:")) return "google";
+    if (id[0] === "h") return "nea";
+    if (id[0] === "b") return "list";
+    return "osm";
+  }
+
   function updateFilterBadge() {
     const n = checkedValues("cz").size + checkedValues("cr").size +
       (el.halal.checked ? 1 : 0) + (el.veg.checked ? 1 : 0) +
-      (checkedValues("type").size < 4 || document.querySelector('input[name="type"][value="ice_cream"]').checked ? 1 : 0);
+      (checkedValues("type").size < 4 || document.querySelector('input[name="type"][value="ice_cream"]').checked ? 1 : 0) +
+      (checkedValues("src").size < 4 ? 1 : 0);
     el.filterCount.hidden = n === 0;
     el.filterCount.textContent = n;
   }
@@ -473,6 +494,7 @@
 
   function scheduleGoogle() {
     if (!GOOGLE || googleCapped || !origin) return;
+    if (!checkedValues("src").has("google")) return;   // switched off: don't spend calls
     clearTimeout(googleTimer);
     googleTimer = setTimeout(fetchGoogle, 700);   // wait until the slider stops moving
   }
@@ -758,6 +780,16 @@
   }
   el.radius.addEventListener("input", () => { updateRadiusLabel(); refresh(); scheduleGoogle(); });
   document.querySelectorAll(".filters input").forEach((i) => i.addEventListener("change", refresh));
+
+  // remember source choices; switching Google back on fetches for the current area
+  const srcBoxes = [...document.querySelectorAll('input[name="src"]')];
+  const savedSrc = store.get("fr_src", null);
+  if (Array.isArray(savedSrc)) srcBoxes.forEach((b) => { b.checked = savedSrc.includes(b.value); });
+  if (!GOOGLE) srcBoxes.find((b) => b.value === "google").closest("label").hidden = true;
+  srcBoxes.forEach((b) => b.addEventListener("change", () => {
+    store.set("fr_src", srcBoxes.filter((x) => x.checked).map((x) => x.value));
+    if (b.value === "google" && b.checked) scheduleGoogle();
+  }));
 
   el.sliceCount.value = String(store.get("fr_slices", 10));
   if (!el.sliceCount.value) el.sliceCount.value = "10";
