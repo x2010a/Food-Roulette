@@ -258,3 +258,4 @@ fieldset { border: 0; padding: 0; margin: 8px 0 0; display: flex; flex-wrap: wra
 
 @keyframes pop { from { transform: scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .result { animation: none; } }
+.chip[hidden] { display: none; }
