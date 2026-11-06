@@ -479,7 +479,7 @@
 
   // ---- human check (Cloudflare Turnstile): one fresh token per Google search ----
   const TS_KEY = (window.FR_CONFIG || {}).turnstileSiteKey || "";
-  let tsWidget = null, tsLoading = null, tsWaiting = null;
+  let tsWidget = null, tsLoading = null;
 
   function loadTurnstile() {
     if (!tsLoading) {
@@ -495,30 +495,38 @@
     return tsLoading;
   }
 
+  const log = (...a) => console.info("[Food Roulette]", ...a);
+  let tsVisible = false;   // after a failed silent check, show the checkbox
+
+  // A fresh widget per Google search (tokens are single-use).
   async function humanToken() {
     if (!TS_KEY) return "";                         // check not configured
-    try {
-      const ts = await loadTurnstile();
-      const got = new Promise((resolve) => { tsWaiting = resolve; });
-      const done = (t) => { if (tsWaiting) { tsWaiting(t); tsWaiting = null; } };
-      if (tsWidget === null) {
-        tsWidget = ts.render("#captcha", {
-          sitekey: TS_KEY,
-          execution: "execute",            // only runs when we ask for a token
-          appearance: "interaction-only",  // invisible unless a click is really needed
-          callback: (t) => done(t),
-          "error-callback": () => done(null),
-          "timeout-callback": () => done(null),
-        });
-      } else {
-        ts.reset(tsWidget);                // tokens are single-use
-      }
-      ts.execute(tsWidget);
-      // give a human up to 60 s to tick the box if Turnstile asks
-      return await Promise.race([got, new Promise((r) => setTimeout(() => r(null), 60000))]);
-    } catch {
-      return null;
-    }
+    let ts;
+    try { ts = await loadTurnstile(); } catch { log("human check: Turnstile script blocked"); return null; }
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (t) => { if (!settled) { settled = true; resolve(t); } };
+      if (tsWidget !== null) { try { ts.remove(tsWidget); } catch { /* ignore */ } tsWidget = null; }
+      tsWidget = ts.render("#captcha", {
+        sitekey: TS_KEY,
+        appearance: tsVisible ? "always" : "interaction-only",
+        callback: (t) => { log("human check: passed"); finish(t); },
+        "error-callback": (code) => { log("human check: failed, code", code); finish(null); return true; },
+        "timeout-callback": () => { log("human check: timed out"); finish(null); },
+      });
+      setTimeout(() => { if (!settled) log("human check: no answer after 60 s"); finish(null); }, 60000);
+    });
+  }
+
+  function showVerifyPrompt() {
+    tsVisible = true;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn ghost small-btn";
+    btn.textContent = "✅ Verify to load more places nearby";
+    btn.addEventListener("click", () => { el.gNote.hidden = true; fetchGoogle(); });
+    el.gNote.replaceChildren(btn);
+    el.gNote.hidden = false;
   }
 
   async function fetchGoogle() {
@@ -532,10 +540,13 @@
     try {
       await loadRules();
       const token = await humanToken();
-      if (token === null) return;                     // check failed: stay on free data
+      if (token === null) { showVerifyPrompt(); return; }   // free data still works meanwhile
       const tokenParam = token ? `&token=${encodeURIComponent(token)}` : "";
       const r = await fetch(`${GOOGLE}/nearby?lat=${q.lat.toFixed(5)}&lon=${q.lon.toFixed(5)}&radius=${q.radius}${tokenParam}`);
       const j = await r.json();
+      log("relay:", j.error ? `error "${j.error}"` : `${(j.places || []).length} places`,
+          j.used ? `(${j.used}/${j.cap} this month)` : "");
+      if (j.error && /captcha/.test(j.error)) { showVerifyPrompt(); return; }
       if (j.capped) {
         googleCapped = true;
         el.gNote.textContent = "Extra Google places are paused until next month.";
