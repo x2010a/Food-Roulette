@@ -164,12 +164,12 @@ def merge_nea(places, centres):
     return matched, added
 
 
-def merge_listed(places, blog_places, geocoder):
+def merge_listed(places, listed, geocoder):
     """Attach listed places (data/manual/) to existing places, or add new ones. Returns counts."""
     # 1) group mentions of the same stall (same postal code + similar name)
     groups = []
     by_postal = defaultdict(list)
-    for b in blog_places:
+    for b in listed:
         bucket = by_postal[b["postcode"]]
         g = next((g for g in bucket if similar(g["name"], b["name"])), None)
         if g:

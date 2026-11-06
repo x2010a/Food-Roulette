@@ -78,6 +78,75 @@ like `ave`, `rd`, `st`, `jln`, `upp`, `amk`, `tpy`. Picking a road searches for 
 chosen distance of **anywhere along that road**, not just one point. If the road download fails,
 the previous week's road list is kept.
 
+## Extra sources: NEA hawker centres & your own lists
+
+**NEA hawker centres** (`scripts/nea.py`): every existing NEA hawker centre from data.gov.sg,
+with its stall count. Centres already in OpenStreetMap get the stall count added; missing
+ones are added.
+
+**Your own lists** (`data/manual/*.json`): drop in a file such as `sethlui-top300.json`
+(made with the browser console snippet) and the weekly run adds its places. Postal codes become
+map points via OneMap (Singapore Land Authority), cached in `data/geocode_cache.json`.
+Format: `{"site": "SETHLUI.com", "fetched": "2026-11-03", "places": [{"name", "address", "postcode", "url"}]}`
+
+## Google places (optional, capped to the free allowance)
+
+When a user picks a location, the app asks Google once for up to 20 nearby food places
+and adds any we don't already have. It goes through a small relay (`worker/worker.js`) on
+Cloudflare's free plan that keeps your API key secret and **stops at 4,500 Google calls a
+month**, under the 5,000 free Nearby Search (Pro) calls. After that the app carries on with
+the free data and shows "Extra Google places are paused until next month".
+
+- Only the cheapest fields are requested (name, location, address, type, Maps link). Adding
+  ratings, hours or reviews would move every call to a pricier tier with a 1,000/month free
+  allowance, so don't add them without lowering `MONTHLY_CAP` to ~900.
+- One call per location. Re-spins, filters and a smaller radius reuse it. Results live only
+  in the user's browser memory for that visit; nothing from Google is saved to the repo.
+- Google places show "Place info from Google Maps" (required attribution) and open their exact
+  Google Maps listing.
+
+### Set up Google (about 10 minutes)
+1. Go to console.cloud.google.com and create a project, e.g. `food-roulette`.
+2. **Billing** → link a billing account. Google requires a card even for free usage.
+3. **APIs & Services → Library** → enable **Places API (New)**.
+4. **APIs & Services → Credentials → Create credentials → API key**. Edit the key →
+   **API restrictions → Restrict key → Places API (New)** only. Leave application
+   restrictions as none (the key lives on Cloudflare, never in the website).
+5. Extra safety: **Billing → Budgets & alerts** → a US$1 budget with email alerts.
+
+### Set up the Cloudflare relay (about 10 minutes, free)
+1. Sign up at dash.cloudflare.com.
+2. **Storage & Databases → KV → Create** a namespace called `food-roulette-usage`.
+3. **Workers & Pages → Create → Worker**, name it `food-roulette`, Deploy, then
+   **Edit code**: replace everything with `worker/worker.js` and click Deploy.
+4. In the Worker: **Settings → Bindings → Add → KV namespace**: variable name `USAGE`,
+   namespace `food-roulette-usage`.
+5. **Settings → Variables and Secrets → Add**:
+   - `GOOGLE_KEY` (type **Secret**): your Google API key
+   - `ALLOWED_ORIGINS` (Text): `https://<your-username>.github.io`
+   - `MONTHLY_CAP` (Text): `4500`
+6. Copy the Worker's address, e.g. `https://food-roulette.<you>.workers.dev`.
+
+### Add the human check (Cloudflare Turnstile, free, about 5 minutes)
+Stops bots from using up your Google allowance. Real users usually see nothing; Turnstile
+only asks for a click when something looks automated. Spins are never checked.
+1. Cloudflare dashboard → **Turnstile → Add widget**. Name it `food-roulette`, add the
+   hostname `<your-username>.github.io`, widget mode **Managed**. Create.
+2. Copy the **Site Key** into `site/config.js` → `turnstileSiteKey`.
+3. Copy the **Secret Key** into your Worker: **Settings → Variables and Secrets → Add**,
+   name `TURNSTILE_SECRET`, type **Secret**.
+
+The Worker checks the token before touching the monthly counter, so failed checks cost
+nothing. If someone fails the check, the app keeps working on the free data.
+
+### Switch it on
+Edit `site/config.js` on GitHub and set `googleProxy` to that address. Commit; the site
+redeploys in about a minute. To switch Google off, set it back to `""`.
+
+To see this month's usage: Cloudflare → KV → `food-roulette-usage` → key `google-calls:YYYY-MM`.
+Note Cloudflare's free KV allows 1,000 counter updates a day; on an unusually busy day the
+relay pauses Google until the next day rather than risk going over.
+
 ## Things to know
 
 - **Credit OpenStreetMap.** The footer's "© OpenStreetMap contributors" line is required by
