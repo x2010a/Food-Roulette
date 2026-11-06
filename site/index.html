@@ -76,6 +76,14 @@
         </fieldset>
         <label class="chip mixchip"><input type="checkbox" id="mixAll" checked> Hawker centres &amp; coffee shops match any cuisine</label>
         <p class="muted small">Cuisine and craving are best guesses from OpenStreetMap tags and place names, so some places are missed or mislabelled.</p>
+        <h3 class="fhead">Sources <span class="muted">(nearby places from each)</span></h3>
+        <fieldset id="srcChips">
+          <legend class="sr-only">Data sources</legend>
+          <label class="chip"><input type="checkbox" name="src" value="osm" checked> OpenStreetMap <span class="muted" data-src-count="osm"></span></label>
+          <label class="chip"><input type="checkbox" name="src" value="nea" checked> NEA hawker centres <span class="muted" data-src-count="nea"></span></label>
+          <label class="chip"><input type="checkbox" name="src" value="google" checked> Google <span class="muted" data-src-count="google"></span></label>
+          <label class="chip"><input type="checkbox" name="src" value="list" checked> My lists <span class="muted" data-src-count="list"></span></label>
+        </fieldset>
         <h3 class="fhead">Place type &amp; diet</h3>
         <fieldset>
           <legend class="sr-only">Place types</legend>
