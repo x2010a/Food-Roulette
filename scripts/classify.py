@@ -43,11 +43,15 @@ CUISINE_NAMES = {
           r"|prawn mee|hor fun|chicken rice|duck rice|roast duck|char siew|\bbao\b|la ?mian"
           r"|crystal jade|din tai fung|tim ho wan|paradise dynasty|putien|haidilao|tsui wah"
           r"|beef noodle|fish soup|economic rice|cai fan|mixed rice|bee ?hoon|carrot cake"
-          r"|chwee kueh|popiah|xin wang|soup restaurant",
+          r"|chwee kueh|popiah|xin wang|soup restaurant"
+          r"|bakmi|bakmie|cap ?cay|kwetiau|nasi campur|\bhokkian\b",
     "ml": r"\bnasi\b|mee rebus|mee soto|\bsoto\b|satay|\bsate\b|rendang|\bayam\b|penyet|padang"
           r"|warung|mak ?cik|bakso|lontong|\bmalay|indonesia|mee siam|ikan bakar|\blemak\b"
           r"|roti john|pondok|kampong|kampung|selera|istimewa|rumah makan|nusantara|minang"
-          r"|bebek|\bmie\b|gado|\bhjh\b|hajjah",
+          r"|bebek|\bmie\b|gado|\bhjh\b|hajjah"
+          r"|sunda|seblak|batagor|siomay|surabi|serabi|lotek|karedok|mie kocok|timbel|kupat tahu"
+          r"|cuanki|\bbaso\b|bakso|cireng|cilok|liwet|pecel|gudeg|rawon|\bwarteg\b|ampera|sambel"
+          r"|lalapan|iga bakar|sate maranggi|ayam goreng|ayam bakar|\bpadang\b|\bbatagor\b|soto",
     "in": r"prata|briyani|biryani|biriyani|tandoor|masala|\bdosai?\b|thosai|\bnaan\b|chapatt?i"
           r"|banana leaf|indian|punjab|chettinad|murtabak|muthu|komala|bhavan|saravana|tiffin"
           r"|madras|kerala|bombay|mumbai|delhi|kashmir|bengal|thali|dhaba|tikka|sup kambing"
@@ -89,19 +93,22 @@ CRAVING_NAMES = {
     "r": r"\brice\b|\bnasi\b|briyani|biryani|biriyani|claypot|clay pot|bento|donburi|gyudon"
          r"|katsudon|butadon|kaisendon|oyakodon|bibimbap|congee|porridge|cai fan|paella|risotto"
          r"|onigiri|sushi|zi ?char|tze ?char|cze ?char|pepper lunch|sukiya|yoshinoya|padang"
-         r"|penyet|\bayam\b|thali|banana leaf",
+         r"|penyet|\bayam\b|thali|banana leaf|timbel|liwet|warteg|nasi uduk|nasi goreng",
     "n": r"noodle|ramen|\bmee\b|\bmie\b|\bmian\b|laksa|\bpho\b|\budon\b|\bsoba\b|kway teow"
          r"|kuey teow|kueh teow|hor fun|bee ?hoon|pasta|spaghetti|wan ?ton|won ?ton|pad thai"
-         r"|jjajang|la ?mian|tom ?yum|ippudo|ichiran|ajisen|italian|trattoria|saizeriya|mamak",
+         r"|jjajang|la ?mian|tom ?yum|ippudo|ichiran|ajisen|italian|trattoria|saizeriya|mamak"
+         r"|bakmi|kwetiau|bihun|\bbaso\b|bakso|mie kocok|seblak|cuanki",
     "b": r"burger|sandwich|bakery|bread|toast|pizza|prata|\bnaan\b|bagel|croissant|\bkaya\b"
          r"|\bbaos?\b|\bsub\b|subway|\bwraps?\b|kebab|murtabak|\bpies?\b|baguette|boulangerie"
          r"|banh mi|\broti\b|mcdonald|carl'?s jr|wendy'?s|shake shack|a&w|domino|ya kun|killiney"
          r"|bakehouse|patisserie|donut|doughnut|waffle|pancake|brunch|\bdeli\b|\btacos?\b"
-         r"|burrito|shawarma|kfc|texas chicken|popeyes|jollibee|4 ?fingers",
+         r"|burrito|shawarma|kfc|texas chicken|popeyes|jollibee|4 ?fingers"
+         r"|martabak|surabi|serabi|roti bakar|bakery|toko roti",
     "l": r"salad|\bpoke\b|yong tau foo|\bytf\b|\bmala\b|\bma la\b|hot ?pot|steamboat|shabu|soup"
          r"|sashimi|steak|\bgrill|barbecue|\bbbq\b|yakiniku|yakitori|moo ?kata|mookata|k-?bbq"
          r"|seafood|satay|\bsate\b|a[cç]ai|grain|\bbowls?\b|healthy|keto|\bgreens?\b|sprout"
-         r"|ikan bakar|tandoor|tikka|rotisserie|sous vide|gyu-?kaku|nanbantei",
+         r"|ikan bakar|tandoor|tikka|rotisserie|sous vide|gyu-?kaku|nanbantei"
+         r"|pecel|lotek|karedok|gado|lalapan|iga bakar|sate maranggi",
 }
 
 # Places with many stalls: they match every cuisine and craving filter.
@@ -109,6 +116,7 @@ MIXED_NAMES = re.compile(
     r"food ?cent(re|er)|hawker|food ?court|kopi ?tiam|coffee ?shop|eating house|food ?hall"
     r"|foodfare|food republic|koufu|canteen|\bmarket\b|food ?village|food ?junction|food ?opera"
     r"|food ?paradise|food ?street|makan ?place|food ?garden"
+    r"|pujasera|sentra kuliner|pusat kuliner|pusat jajanan|kantin"
 )
 
 _cuisine_re = {k: re.compile(v) for k, v in CUISINE_NAMES.items()}

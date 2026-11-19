@@ -18,7 +18,8 @@ from collections import Counter, defaultdict
 import requests
 
 import nea
-from classify import CRAVING_LABELS, CRAVING_NAMES, CUISINE_LABELS, CUISINE_NAMES, MIXED_NAMES, classify
+from classify import (CRAVING_LABELS, CRAVING_NAMES, CRAVING_TAGS, CUISINE_LABELS, CUISINE_NAMES,
+                      CUISINE_TAGS, MIXED_NAMES, classify)
 from geocode import Geocoder
 
 DATA_DIR = pathlib.Path(__file__).resolve().parent.parent / "site" / "data"
@@ -37,6 +38,7 @@ ROADS_QUERY = AREA + f'way["highway"~"^({"|".join(ROAD_TYPES)})$"]["name"](area.
 
 MIN_PLACES = 1000
 MIN_ROADS = 1000
+
 
 PLACE_FIELDS = ["id", "name", "type", "cuisine", "lat", "lon", "halal", "veg",
                 "street", "postcode", "hours", "cz", "cr", "mix", "addr", "stalls", "f"]
@@ -330,7 +332,9 @@ def main():
                           "fields": PLACE_FIELDS, "places": to_rows(places)})
 
     # The app classifies Google places in the browser with the same keyword lists.
-    write("classify.json", {"cuisine": CUISINE_NAMES, "craving": CRAVING_NAMES, "mixed": MIXED_NAMES.pattern})
+    write("classify.json", {"cuisine": CUISINE_NAMES, "craving": CRAVING_NAMES, "mixed": MIXED_NAMES.pattern,
+                           "cuisineTags": {k: sorted(v) for k, v in CUISINE_TAGS.items()},
+                           "cravingTags": {k: sorted(v) for k, v in CRAVING_TAGS.items()}})
 
     print("4/4 Downloading road names...")
     time.sleep(5)
@@ -342,6 +346,8 @@ def main():
         write("roads.json", {"updated": today, "source": "© OpenStreetMap contributors (ODbL)", "roads": roads})
     except Exception as e:  # noqa: BLE001
         print(f"    WARNING: road download failed ({e}); keeping the previous roads.json.")
+
+
 
 
 if __name__ == "__main__":
