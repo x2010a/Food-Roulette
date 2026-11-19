@@ -147,6 +147,23 @@ To see this month's usage: Cloudflare → KV → `food-roulette-usage` → key `
 Note Cloudflare's free KV allows 1,000 counter updates a day; on an unusually busy day the
 relay pauses Google until the next day rather than risk going over.
 
+## Outside Singapore (any country)
+
+Pick a country in the dropdown (or tap "Use my location"; it switches automatically).
+- **Location search:** type a city, area, street or mall; suggestions come from Google
+  (`/autocomplete` on the relay), restricted to the chosen country. Picking one costs one
+  Place Details (Essentials) lookup, capped by `PLACE_CAP` (default 9,000; 10,000 free a month).
+- **Food places:** OpenStreetMap is queried live within your radius (free, no setup), and
+  Google adds its places on top as in Singapore. **Google's places get the wheel's slots
+  first**; OpenStreetMap fills the rest and keeps the wheel working if Google is capped.
+- Singapore keeps its prebuilt data, NEA hawker centres and road list.
+
+**Safety net for location search:** the relay can't count each keystroke without using up
+Cloudflare's free KV writes, so cap Autocomplete in Google itself: Google Cloud →
+**APIs & Services → Places API (New) → Quotas & System Limits**, filter for "Autocomplete",
+and set the per-day limit to about 300. Typing that ends in a pick is free; abandoned
+typing counts against the 10,000 free Autocomplete requests a month.
+
 ## Things to know
 
 - **Credit OpenStreetMap.** The footer's "© OpenStreetMap contributors" line is required by
