@@ -21,6 +21,10 @@
     </header>
 
     <section class="panel" aria-label="Where are you?">
+      <label class="field inline country">
+        <span>Country</span>
+        <select id="countrySelect" aria-label="Country"></select>
+      </label>
       <div class="row">
         <button id="locateBtn" class="btn ghost" type="button">📍 Use my location</button>
         <select id="areaSelect" aria-label="Or pick an area"></select>
@@ -74,7 +78,7 @@
           <label class="chip"><input type="checkbox" name="cr" value="b"> 🍞 Bread &amp; burgers</label>
           <label class="chip"><input type="checkbox" name="cr" value="l"> 🥗 Light / low-carb</label>
         </fieldset>
-        <label class="chip mixchip"><input type="checkbox" id="mixAll" checked> Hawker centres &amp; coffee shops match any cuisine</label>
+        <label class="chip mixchip"><input type="checkbox" id="mixAll"> Hawker centres &amp; coffee shops match any cuisine</label>
         <p class="muted small">Cuisine and craving are best guesses from OpenStreetMap tags and place names, so some places are missed or mislabelled.</p>
         <h3 class="fhead">Sources <span class="muted">(nearby places from each)</span></h3>
         <fieldset id="srcChips">

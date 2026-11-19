@@ -52,7 +52,17 @@
   };
 
   // ---------- state ----------
-  let places = [];
+  let places = [];               // base list on the wheel: Singapore data, or live OpenStreetMap elsewhere
+  let sgPlaces = [];             // prebuilt Singapore data (data/places.json)
+  let sgLoading = false;
+  let country = store.get("fr_country", "SG");   // "" = any country
+  const isSG = () => country === "SG";
+  const SG_BOX = [1.15, 1.48, 103.59, 104.1];    // lat min/max, lon min/max
+  const inSG = (lat, lon) => lat >= SG_BOX[0] && lat <= SG_BOX[1] && lon >= SG_BOX[2] && lon <= SG_BOX[3];
+  const allGoogle = new Map();   // every Google place fetched this visit
+  const osmById = new Map();     // live OpenStreetMap places fetched this visit (outside Singapore)
+  const osmCache = new Map();    // areas already fetched from OpenStreetMap
+  let liveLoading = 0;           // live lookups in progress
   let roads = null;             // loaded on demand
   let roadsPromise = null;
   let markDataReady;
@@ -72,7 +82,7 @@
   const canvas = $("wheel");
   const ctx = canvas.getContext("2d");
   const el = {
-    locateBtn: $("locateBtn"), areaSelect: $("areaSelect"), locStatus: $("locStatus"),
+    locateBtn: $("locateBtn"), areaSelect: $("areaSelect"), locStatus: $("locStatus"), countrySelect: $("countrySelect"),
     roadInput: $("roadInput"), roadList: $("roadList"), roadClear: $("roadClear"),
     radius: $("radius"), radiusLabel: $("radiusLabel"), walkLabel: $("walkLabel"),
     halal: $("halal"), veg: $("veg"), noRepeat: $("noRepeat"), mixAll: $("mixAll"),
@@ -84,12 +94,11 @@
   };
 
   // ---------- geometry ----------
-  // Fast flat-earth distance; accurate to well under 1% across Singapore.
+  // Fast flat-earth distance; accurate to well under 1% over a few km, anywhere.
   const M_PER_DEG_LAT = 110574;
-  const M_PER_DEG_LON = 111320 * Math.cos(1.35 * Math.PI / 180);
   function distanceM(lat1, lon1, lat2, lon2) {
     const dy = (lat2 - lat1) * M_PER_DEG_LAT;
-    const dx = (lon2 - lon1) * M_PER_DEG_LON;
+    const dx = (lon2 - lon1) * 111320 * Math.cos(((lat1 + lat2) / 2) * Math.PI / 180);
     return Math.sqrt(dx * dx + dy * dy);
   }
   function distanceToOrigin(p) {
@@ -105,13 +114,15 @@
 
   // ---------- data ----------
   async function loadData() {
+    if (sgLoading) return;
+    sgLoading = true;
     try {
       const res = await fetch("data/places.json", { cache: "no-cache" });
       if (!res.ok) throw new Error(res.status);
       const json = await res.json();
       const idx = Object.fromEntries(json.fields.map((k, i) => [k, i]));
       const get = (r, k) => (idx[k] === undefined ? null : r[idx[k]]);
-      places = json.places.map((r) => ({
+      sgPlaces = json.places.map((r) => ({
         id: get(r, "id"), name: get(r, "name"), type: get(r, "type"), cuisine: get(r, "cuisine"),
         lat: get(r, "lat"), lon: get(r, "lon"), halal: get(r, "halal"), veg: get(r, "veg"),
         street: get(r, "street"), postcode: get(r, "postcode"), hours: get(r, "hours"),
@@ -121,7 +132,7 @@
         addr: get(r, "addr"), stalls: get(r, "stalls"), f: get(r, "f") || [],
       }));
       if (json.updated) el.updated.textContent = `Data updated ${json.updated}.`;
-      refresh();
+      if (isSG()) { places = sgPlaces; mergeGoogle(); }
     } catch (e) {
       el.count.textContent = "Couldn't load the place list. Has the data refresh run yet?";
       console.error(e);
@@ -153,7 +164,7 @@
 
   function refresh() {
     updateFilterBadge();
-    if (!origin || !places.length) return;
+    if (!origin || (isSG() && !sgPlaces.length)) return;
     const radius = +el.radius.value;
     const types = checkedValues("type");
     const wantCz = checkedValues("cz");
@@ -188,7 +199,9 @@
     const where = origin.kind === "road" ? `along ${origin.label}` : `of ${origin.label}`;
     el.count.textContent = candidates.length
       ? `${candidates.length} place${candidates.length === 1 ? "" : "s"} within ${fmtDist(radius)} ${where}`
+      : liveLoading ? "Loading places…"
       : `Nothing found within ${fmtDist(radius)} ${where}. Try a bigger radius or fewer filters.`;
+    if (candidates.length && liveLoading) el.count.textContent += " · loading more…";
     const limit = sliceLimit();
     if (candidates.length > limit) el.count.textContent += ` · ${limit} on the wheel`;
     el.shuffleBtn.disabled = candidates.length <= limit;
@@ -216,13 +229,20 @@
     el.filterCount.textContent = n;
   }
 
-  function pickSlices() {
-    const pool = candidates.slice();
-    for (let i = pool.length - 1; i > 0; i--) {           // Fisher–Yates shuffle
+  function shuffle(a) {
+    for (let i = a.length - 1; i > 0; i--) {              // Fisher–Yates shuffle
       const j = Math.floor(Math.random() * (i + 1));
-      [pool[i], pool[j]] = [pool[j], pool[i]];
+      [a[i], a[j]] = [a[j], a[i]];
     }
-    slices = pool.slice(0, sliceLimit());
+    return a;
+  }
+  const fromGoogleList = (p) => p.google || googleUri.has(p.id);
+
+  // Google's places get the wheel's slots first; other sources fill what's left.
+  function pickSlices() {
+    const top = shuffle(candidates.filter(fromGoogleList));
+    const rest = shuffle(candidates.filter((p) => !fromGoogleList(p)));
+    slices = shuffle(top.concat(rest).slice(0, sliceLimit()));
     el.spinBtn.disabled = slices.length === 0;
     el.ticker.textContent = "";
     drawWheel();
@@ -354,7 +374,8 @@
   function mapsUrl(p) {
     const exact = p.uri || googleUri.get(p.id);   // Google's own link for this exact place
     if (exact) return exact;
-    const where = p.addr || [p.street, p.postcode, "Singapore"].filter(Boolean).join(" ") || "Singapore";
+    const area = isSG() ? "Singapore" : (origin && origin.context) || "";
+    const where = p.addr || [p.street, p.postcode, area].filter(Boolean).join(" ") || area;
     const q = `${p.name} ${where}`;
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
   }
@@ -455,8 +476,9 @@
       const r = await fetch("data/classify.json", { cache: "no-cache" });
       const j = await r.json();
       const compile = (o) => Object.entries(o).map(([k, v]) => [k, new RegExp(v)]);
-      rules = { cuisine: compile(j.cuisine), craving: compile(j.craving), mixed: new RegExp(j.mixed) };
-    } catch { rules = { cuisine: [], craving: [], mixed: /$^/ }; }
+      rules = { cuisine: compile(j.cuisine), craving: compile(j.craving), mixed: new RegExp(j.mixed),
+                cuisineTags: j.cuisineTags || {}, cravingTags: j.cravingTags || {} };
+    } catch { rules = { cuisine: [], craving: [], mixed: /$^/, cuisineTags: {}, cravingTags: {} }; }
     return rules;
   }
 
@@ -584,28 +606,151 @@
   }
 
   async function applyGoogle(results) {
-    await dataReady;                 // compare against the full place list, never a half-loaded one
-    const extra = new Map(googleExtra.map((p) => [p.id, p]));
-    for (const g of results) {
-      if (extra.has(g.id)) continue;
-      // Already in our data? Just remember Google's exact Maps link for it.
+    for (const g of results) allGoogle.set(g.id, g);
+    if (isSG()) await dataReady;     // compare against the full place list, never a half-loaded one
+    mergeGoogle();
+  }
+
+  // Google places that match one already in the base list just lend it their exact Maps
+  // link (and count as Google's); the rest are added.
+  function mergeGoogle() {
+    const extra = [];
+    googleUri.clear();
+    for (const g of allGoogle.values()) {
       const twin = places.find((p) => Math.abs(p.lat - g.lat) < 0.001 && Math.abs(p.lon - g.lon) < 0.001 &&
         distanceM(p.lat, p.lon, g.lat, g.lon) <= 80 && similarNames(p.name, g.name));
       if (twin) googleUri.set(twin.id, g.uri);
-      else extra.set(g.id, g);
+      else extra.push(g);
     }
-    googleExtra = [...extra.values()];
+    googleExtra = extra;
     refresh();
+  }
+
+  // ---------- live OpenStreetMap (outside Singapore) ----------
+  const OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
+  let osmTimer = null;
+
+  function scheduleOsm() {
+    if (isSG() || !origin || !checkedValues("src").has("osm")) return;
+    clearTimeout(osmTimer);
+    osmTimer = setTimeout(fetchOsm, 700);
+  }
+
+  function fromOsm(e) {
+    const t = e.tags || {};
+    const name = (t["name:en"] || t.name || "").trim();
+    const lat = e.lat ?? (e.center && e.center.lat), lon = e.lon ?? (e.center && e.center.lon);
+    if (!name || lat == null || lon == null) return null;
+    const lname = name.toLowerCase();
+    const vals = new Set((t.cuisine || "").toLowerCase().split(";").map((s) => s.trim().replace(/ /g, "_")).filter(Boolean));
+    const byTag = (map) => Object.entries(map).filter(([, list]) => list.some((v) => vals.has(v))).map(([k]) => k);
+    let cz = byTag(rules.cuisineTags);
+    if (!cz.length) cz = rules.cuisine.filter(([, rx]) => rx.test(lname)).map(([k]) => k);
+    const cr = [...new Set([...byTag(rules.cravingTags), ...rules.craving.filter(([, rx]) => rx.test(lname)).map(([k]) => k)])];
+    return {
+      id: e.type[0] + e.id, name, type: t.amenity,
+      cuisine: t.cuisine ? t.cuisine.replace(/_/g, " ").replace(/;/g, ", ") : null,
+      lat, lon, halal: t["diet:halal"] || null, veg: t["diet:vegetarian"] || null,
+      street: t["addr:street"] || null, postcode: t["addr:postcode"] || null, hours: t.opening_hours || null,
+      cz, cr, mix: t.amenity === "food_court" || rules.mixed.test(lname), addr: null, stalls: null, f: [],
+    };
+  }
+
+  async function fetchOsm() {
+    const q = googleQuery();
+    for (const key of osmCache.keys()) {           // already loaded for this area?
+      const [la, lo, ra] = key.split(",").map(Number);
+      if (distanceM(la, lo, q.lat, q.lon) + q.radius <= ra + 150) return;
+    }
+    const key = `${q.lat.toFixed(4)},${q.lon.toFixed(4)},${q.radius}`;
+    const query = `[out:json][timeout:25];nwr["amenity"~"^(restaurant|fast_food|cafe|food_court|ice_cream)$"]["name"]` +
+      `(around:${q.radius},${q.lat.toFixed(5)},${q.lon.toFixed(5)});out center tags;`;
+    liveLoading++; refresh();
+    try {
+      await loadRules();
+      for (const url of OVERPASS) {
+        try {
+          const r = await fetch(url, { method: "POST", body: new URLSearchParams({ data: query }) });
+          if (!r.ok) throw new Error(r.status);
+          const j = await r.json();
+          for (const e of j.elements || []) { const p = fromOsm(e); if (p) osmById.set(p.id, p); }
+          osmCache.set(key, true);
+          log(`OpenStreetMap: ${(j.elements || []).length} places`);
+          break;
+        } catch (e) { log("OpenStreetMap server busy, trying the next one", e.message || e); }
+      }
+    } finally { liveLoading--; }
+    if (!isSG()) { places = [...osmById.values()]; mergeGoogle(); }
   }
 
   // ---------- location: areas & GPS ----------
   function setOrigin(o) {
     origin = o;
-    if (o.kind !== "gps") store.set("fr_origin", { kind: o.kind, name: o.label });
+    if (o.kind !== "gps") {
+      store.set("fr_origin", { kind: o.kind, name: o.label, lat: o.points[0][0], lon: o.points[0][1], context: o.context || "" });
+    }
     el.result.hidden = true;
     refresh();
+    scheduleOsm();
     scheduleGoogle();
   }
+
+  // ---------- country ----------
+  const COUNTRY_CODES = ("AD AE AF AG AI AL AM AO AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR " +
+    "BS BT BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET " +
+    "FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GT GU GW GY HK HN HR HT HU ID IE IL IM IN IO IQ IR " +
+    "IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML " +
+    "MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR " +
+    "PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TG TH TJ TK TL " +
+    "TM TN TO TR TT TV TW TZ UA UG US UY UZ VA VC VE VG VI VN VU WF WS XK YE YT ZA ZM ZW").split(" ");
+
+  function initCountries() {
+    let names = null;
+    try { names = new Intl.DisplayNames(["en"], { type: "region" }); } catch { /* old browser: show codes */ }
+    const label = (c) => { try { return names ? names.of(c) : c; } catch { return c; } };
+    const add = (value, text) => {
+      const o = document.createElement("option");
+      o.value = value; o.textContent = text;
+      el.countrySelect.append(o);
+    };
+    add("SG", "Singapore");
+    add("", "🌍 Any country");
+    COUNTRY_CODES.filter((c) => c !== "SG").map((c) => [c, label(c)])
+      .sort((a, b) => a[1].localeCompare(b[1])).forEach(([c, n]) => add(c, n));
+    el.countrySelect.value = country;
+    if (el.countrySelect.value !== country) { country = "SG"; el.countrySelect.value = "SG"; }
+  }
+
+  function applyModeUI() {
+    el.areaSelect.hidden = !isSG();
+    el.roadInput.placeholder = isSG() ? "🔎 Or type a road, e.g. Amoy St, AMK Ave 3"
+      : "🔎 Search a city, area or street, e.g. Dago, Bandung";
+    for (const v of ["nea", "list"]) {
+      const box = document.querySelector(`input[name="src"][value="${v}"]`);
+      if (box) box.closest("label").hidden = !isSG();
+    }
+  }
+
+  function setCountry(cc, keepOrigin) {
+    country = cc;
+    store.set("fr_country", cc);
+    el.countrySelect.value = cc;
+    applyModeUI();
+    places = isSG() ? sgPlaces : [...osmById.values()];
+    if (isSG() && !sgPlaces.length) loadData();
+    if (keepOrigin) { mergeGoogle(); return; }
+    origin = null;
+    clearRoadInput();
+    el.locStatus.textContent = "";
+    el.result.hidden = true;
+    candidates = []; slices = [];
+    el.spinBtn.disabled = true; el.shuffleBtn.disabled = true;
+    drawWheel();
+    if (isSG()) useArea(AREAS[0][0]);
+    else el.count.textContent = "Search for a city or area above, or tap “Use my location”.";
+  }
+
+  el.countrySelect.addEventListener("change", () => setCountry(el.countrySelect.value, false));
 
   function useArea(name) {
     const a = AREAS.find((x) => x[0] === name) || AREAS[0];
@@ -638,10 +783,13 @@
     el.locStatus.textContent = "Finding you…";
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        const { latitude: la, longitude: lo } = pos.coords;
         el.locStatus.textContent = "Using your current location.";
+        if (inSG(la, lo) && !isSG()) setCountry("SG", true);
+        else if (!inSG(la, lo) && isSG()) setCountry("", true);
         el.areaSelect.value = "";
         clearRoadInput();
-        setOrigin({ points: [[pos.coords.latitude, pos.coords.longitude]], label: "you", kind: "gps" });
+        setOrigin({ points: [[la, lo]], label: "you", kind: "gps", context: "" });
       },
       () => { el.locStatus.textContent = "Couldn't get your location. Pick an area or type a road."; },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
@@ -688,7 +836,74 @@
     return frag;
   }
 
+  // Outside Singapore: Google place suggestions (cities, areas, streets, malls).
+  let acTimer = null, acSession = null, acSeq = 0;
+  const newSession = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`).replace(/[^A-Za-z0-9-]/g, "");
+
+  function listMessage(text) {
+    el.roadList.replaceChildren();
+    const li = document.createElement("li");
+    li.className = "empty"; li.textContent = text;
+    el.roadList.append(li);
+    openList();
+  }
+
+  function renderPlaceSuggestions() {
+    const q = el.roadInput.value.trim();
+    active = -1;
+    if (q.length < 2) { suggestions = []; closeList(); return; }
+    if (!GOOGLE) { listMessage("Place search needs the Google relay (see README)."); return; }
+    clearTimeout(acTimer);
+    acTimer = setTimeout(async () => {
+      const seq = ++acSeq;
+      acSession = acSession || newSession();
+      const bias = origin ? `&lat=${origin.points[0][0].toFixed(4)}&lon=${origin.points[0][1].toFixed(4)}` : "";
+      try {
+        const r = await fetch(`${GOOGLE}/autocomplete?q=${encodeURIComponent(q)}&cc=${country}&session=${acSession}${bias}`);
+        const j = await r.json();
+        if (seq !== acSeq || el.roadInput.value.trim() !== q) return;    // user kept typing
+        suggestions = (j.suggestions || []).map((s) => ({ ...s, name: s.main, google: true }));
+        if (!suggestions.length) { listMessage(j.error ? "Search unavailable right now" : "No matching place"); return; }
+        el.roadList.replaceChildren();
+        suggestions.forEach((s, i) => {
+          const li = document.createElement("li");
+          li.id = `road-opt-${i}`;
+          li.setAttribute("role", "option");
+          li.setAttribute("aria-selected", "false");
+          const main = document.createElement("strong"); main.textContent = s.main;
+          li.append(main);
+          if (s.sub) { const sub = document.createElement("span"); sub.className = "muted"; sub.textContent = ` ${s.sub}`; li.append(sub); }
+          li.addEventListener("pointerdown", (e) => { e.preventDefault(); choosePlace(s); });
+          el.roadList.append(li);
+        });
+        openList();
+      } catch { listMessage("Search unavailable right now"); }
+    }, 300);
+  }
+
+  async function choosePlace(s) {
+    el.roadInput.value = s.sub ? `${s.main}, ${s.sub}` : s.main;
+    el.roadClear.hidden = false;
+    closeList();
+    el.roadInput.blur();
+    el.locStatus.textContent = `Finding ${s.main}…`;
+    const session = acSession || "";
+    acSession = null;                                    // a pick ends the search session
+    try {
+      const j = await (await fetch(`${GOOGLE}/place?id=${encodeURIComponent(s.id)}&session=${session}`)).json();
+      if (j.capped) { el.locStatus.textContent = "Place search is paused until next month. Use your location instead."; return; }
+      if (j.lat == null) { el.locStatus.textContent = "Couldn't find that place. Try another."; return; }
+      if (inSG(j.lat, j.lon) && !isSG()) setCountry("SG", true);
+      el.locStatus.textContent = `Searching around ${s.main}.`;
+      setOrigin({ points: [[j.lat, j.lon]], label: s.main, kind: "place", context: s.sub || j.addr || "" });
+    } catch { el.locStatus.textContent = "Place search unavailable right now. Try “Use my location”."; }
+  }
+
+  const choose = (pick) => (pick.google ? choosePlace(pick) : chooseRoad(pick));
+
   function renderSuggestions() {
+    if (!isSG()) { renderPlaceSuggestions(); return; }
     const q = el.roadInput.value.trim();
     el.roadList.replaceChildren();
     active = -1;
@@ -751,7 +966,7 @@
     closeList();
   }
 
-  el.roadInput.addEventListener("focus", () => { loadRoads(); if (el.roadInput.value) renderSuggestions(); });
+  el.roadInput.addEventListener("focus", () => { if (isSG()) loadRoads(); if (el.roadInput.value) renderSuggestions(); });
   el.roadInput.addEventListener("input", () => {
     el.roadClear.hidden = !el.roadInput.value;
     renderSuggestions();
@@ -762,7 +977,7 @@
     else if (e.key === "Enter") {
       e.preventDefault();
       const pick = suggestions[active >= 0 ? active : 0];
-      if (pick && !el.roadList.hidden) chooseRoad(pick);
+      if (pick && !el.roadList.hidden) choose(pick);
     } else if (e.key === "Escape") closeList();
   });
   el.roadInput.addEventListener("blur", () => setTimeout(closeList, 100));
@@ -778,7 +993,7 @@
     el.radiusLabel.textContent = fmtDist(m);
     el.walkLabel.textContent = `(~${walkMin(m)} min walk)`;
   }
-  el.radius.addEventListener("input", () => { updateRadiusLabel(); refresh(); scheduleGoogle(); });
+  el.radius.addEventListener("input", () => { updateRadiusLabel(); refresh(); scheduleOsm(); scheduleGoogle(); });
   document.querySelectorAll(".filters input").forEach((i) => i.addEventListener("change", refresh));
 
   // remember source choices; switching Google back on fetches for the current area
@@ -789,6 +1004,7 @@
   srcBoxes.forEach((b) => b.addEventListener("change", () => {
     store.set("fr_src", srcBoxes.filter((x) => x.checked).map((x) => x.value));
     if (b.value === "google" && b.checked) scheduleGoogle();
+    if (b.value === "osm" && b.checked) scheduleOsm();
   }));
 
   el.sliceCount.value = String(store.get("fr_slices", 10));
@@ -806,12 +1022,23 @@
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", drawWheel);
 
   // ---------- go ----------
+  initCountries();
+  applyModeUI();
   initAreas();
   updateRadiusLabel();
   sizeCanvas();
 
   const saved = store.get("fr_origin", null);
-  if (saved && saved.kind === "road") {
+  if (!isSG()) {
+    markDataReady();
+    if (saved && saved.kind === "place" && Number.isFinite(saved.lat)) {
+      el.roadInput.value = saved.context ? `${saved.name}, ${saved.context}` : saved.name;
+      el.roadClear.hidden = false;
+      setOrigin({ points: [[saved.lat, saved.lon]], label: saved.name, kind: "place", context: saved.context });
+    } else {
+      el.count.textContent = "Search for a city or area above, or tap “Use my location”.";
+    }
+  } else if (saved && saved.kind === "road") {
     // restore last road once the road list arrives; fall back to the default area
     useArea(AREAS[0][0]);
     loadRoads().then(() => {
@@ -821,5 +1048,5 @@
   } else {
     useArea(saved && saved.name);
   }
-  loadData();
+  if (isSG()) loadData();
 })();
