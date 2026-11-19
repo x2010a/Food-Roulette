@@ -63,6 +63,9 @@
   const osmById = new Map();     // live OpenStreetMap places fetched this visit (outside Singapore)
   const osmCache = new Map();    // areas already fetched from OpenStreetMap
   let liveLoading = 0;           // live lookups in progress
+  let food = "";                 // "what do you feel like" text, e.g. "dim sum"
+  const textHits = new Map();    // food text -> Set of Google ids that Google says match
+  const twinGids = new Map();    // base place id -> Google ids of the same place
   let roads = null;             // loaded on demand
   let roadsPromise = null;
   let markDataReady;
@@ -88,7 +91,7 @@
     halal: $("halal"), veg: $("veg"), noRepeat: $("noRepeat"), mixAll: $("mixAll"),
     filterCount: $("filterCount"),
     spinBtn: $("spinBtn"), shuffleBtn: $("shuffleBtn"), count: $("count"),
-    sliceCount: $("sliceCount"), ticker: $("ticker"),
+    sliceCount: $("sliceCount"), ticker: $("ticker"), foodInput: $("foodInput"), foodClear: $("foodClear"),
     result: $("result"), rName: $("rName"), rMeta: $("rMeta"), rAddr: $("rAddr"),
     rGo: $("rGo"), rFeat: $("rFeat"), rGoogle: $("rGoogle"), gNote: $("gNote"), rAgain: $("rAgain"), rClosed: $("rClosed"), updated: $("updated"),
   };
@@ -186,6 +189,7 @@
       if (el.noRepeat.checked && recent[p.id] > cutoff) continue;
       if (wantCz.size && !(overlaps(p.cz, wantCz) || (p.mix && mixOk))) continue;
       if (wantCr.size && !(overlaps(p.cr, wantCr) || (p.mix && mixOk))) continue;
+      if (food && !matchesFood(p)) continue;
       const d = distanceToOrigin(p);
       if (d > radius) continue;
       const src = srcOf(p);
@@ -197,11 +201,17 @@
       if (span) span.textContent = `(${n})`;
     }
     const where = origin.kind === "road" ? `along ${origin.label}` : `of ${origin.label}`;
+    const what = food ? `“${el.foodInput.value.trim()}” ` : "";
     el.count.textContent = candidates.length
-      ? `${candidates.length} place${candidates.length === 1 ? "" : "s"} within ${fmtDist(radius)} ${where}`
+      ? `${candidates.length} ${what}place${candidates.length === 1 ? "" : "s"} within ${fmtDist(radius)} ${where}`
       : liveLoading ? "Loading places…"
-      : `Nothing found within ${fmtDist(radius)} ${where}. Try a bigger radius or fewer filters.`;
+      : `No ${what}places found within ${fmtDist(radius)} ${where}. Try a bigger radius or fewer filters.`;
     if (candidates.length && liveLoading) el.count.textContent += " · loading more…";
+    if (food && GOOGLE && !liveLoading && !textHits.has(food) && checkedValues("src").has("google")) {
+      el.count.textContent = candidates.length
+        ? `${el.count.textContent} · press Enter to search Google for more`
+        : `Press Enter to search for “${el.foodInput.value.trim()}” nearby.`;
+    }
     const limit = sliceLimit();
     if (candidates.length > limit) el.count.textContent += ` · ${limit} on the wheel`;
     el.shuffleBtn.disabled = candidates.length <= limit;
@@ -616,15 +626,83 @@
   function mergeGoogle() {
     const extra = [];
     googleUri.clear();
+    twinGids.clear();
     for (const g of allGoogle.values()) {
       const twin = places.find((p) => Math.abs(p.lat - g.lat) < 0.001 && Math.abs(p.lon - g.lon) < 0.001 &&
         distanceM(p.lat, p.lon, g.lat, g.lon) <= 80 && similarNames(p.name, g.name));
-      if (twin) googleUri.set(twin.id, g.uri);
-      else extra.push(g);
+      if (twin) {
+        googleUri.set(twin.id, g.uri);
+        twinGids.set(twin.id, (twinGids.get(twin.id) || []).concat(g.id));
+      } else extra.push(g);
     }
     googleExtra = extra;
     refresh();
   }
+
+  // ---------- "what do you feel like" food search ----------
+  // Free part: names and cuisine tags that contain the words ("Dim Sum Den", cuisine=dim_sum).
+  // Google part: a text search for the words within the radius (up to 3 calls, own allowance),
+  // which also finds places whose names don't say it.
+  const compact = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+  let textTimer = null;
+  const textCache = new Map();   // "food|lat,lon,radius" -> true
+
+  function setFood(value) {
+    food = compact(value);
+    if (food.length > 4 && food.endsWith("s")) food = food.slice(0, -1);   // "noodles" -> "noodle"
+    el.foodClear.hidden = !value;
+    el.result.hidden = true;
+    refresh();
+  }
+
+  function matchesFood(p) {
+    if (compact(p.name).includes(food) || compact(p.cuisine).includes(food)) return true;
+    const hits = textHits.get(food);
+    if (!hits) return false;
+    if (p.google) return hits.has(p.id);
+    return (twinGids.get(p.id) || []).some((g) => hits.has(g));
+  }
+
+  function scheduleText() {
+    if (!GOOGLE || !food || !origin || !checkedValues("src").has("google")) return;
+    clearTimeout(textTimer);
+    textTimer = setTimeout(fetchText, 400);
+  }
+
+  async function fetchText() {
+    const q = googleQuery(), what = food, words = el.foodInput.value.trim();
+    for (const key of textCache.keys()) {           // already searched this food here?
+      const [f, area] = key.split("|");
+      const [la, lo, ra] = area.split(",").map(Number);
+      if (f === what && distanceM(la, lo, q.lat, q.lon) + q.radius <= ra + 150) return;
+    }
+    liveLoading++; refresh();
+    try {
+      await loadRules();
+      const r = await fetch(`${GOOGLE}/text?q=${encodeURIComponent(words)}&lat=${q.lat.toFixed(5)}&lon=${q.lon.toFixed(5)}&radius=${q.radius}`);
+      const j = await r.json();
+      log("food search:", j.error ? `error "${j.error}"` : `${(j.places || []).length} “${words}” places`,
+          j.used ? `(${j.used}/${j.cap} this month)` : "");
+      if (j.capped) {
+        el.gNote.textContent = "Google food search is paused until next month; matching by name only.";
+        el.gNote.hidden = false;
+      } else if (!j.error && !j.limited) {
+        textCache.set(`${what}|${q.lat.toFixed(4)},${q.lon.toFixed(4)},${q.radius}`, true);
+        const res = (j.places || []).map(fromGoogle);
+        const hits = textHits.get(what) || new Set();
+        res.forEach((g) => hits.add(g.id));
+        textHits.set(what, hits);
+        await applyGoogle(res);
+      }
+    } catch (e) {
+      console.warn("Google food search unavailable", e);
+    } finally { liveLoading--; refresh(); }
+  }
+
+  el.foodInput.addEventListener("input", () => setFood(el.foodInput.value));   // free name matching as you type
+  el.foodInput.addEventListener("change", () => { setFood(el.foodInput.value); scheduleText(); });  // Enter or leaving the box
+  el.foodInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); el.foodInput.blur(); } });
+  el.foodClear.addEventListener("click", () => { el.foodInput.value = ""; setFood(""); el.foodInput.focus(); });
 
   // ---------- live OpenStreetMap (outside Singapore) ----------
   const OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
@@ -693,6 +771,7 @@
     refresh();
     scheduleOsm();
     scheduleGoogle();
+    scheduleText();
   }
 
   // ---------- country ----------
@@ -993,7 +1072,7 @@
     el.radiusLabel.textContent = fmtDist(m);
     el.walkLabel.textContent = `(~${walkMin(m)} min walk)`;
   }
-  el.radius.addEventListener("input", () => { updateRadiusLabel(); refresh(); scheduleOsm(); scheduleGoogle(); });
+  el.radius.addEventListener("input", () => { updateRadiusLabel(); refresh(); scheduleOsm(); scheduleGoogle(); scheduleText(); });
   document.querySelectorAll(".filters input").forEach((i) => i.addEventListener("change", refresh));
 
   // remember source choices; switching Google back on fetches for the current area

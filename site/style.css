@@ -264,3 +264,5 @@ fieldset { border: 0; padding: 0; margin: 8px 0 0; display: flex; flex-wrap: wra
 .suggest li strong { font-weight: 600; }
 .suggest li .muted { font-size: 13px; }
 select[hidden] { display: none; }
+.combo.food input { padding-left: 14px; }
+.combo.food input::-webkit-search-cancel-button { display: none; }
