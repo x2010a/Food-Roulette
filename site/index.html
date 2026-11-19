@@ -4,146 +4,182 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Food Roulette</title>
-  <meta name="description" content="Can't decide what to eat? Spin the wheel and let it pick a place near you in Singapore.">
-  <meta name="theme-color" content="#f5efe4" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#1b1814" media="(prefers-color-scheme: dark)">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎡</text></svg>">
+  <meta name="description" content="Can't decide what to eat? Spin the wheel and it picks a place near you, anywhere in the world.">
+  <meta name="theme-color" content="#1c1438">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><circle cx='32' cy='32' r='30' fill='%23ffc94a'/><path d='M32 32 32 6A26 26 0 0 1 54.5 19Z' fill='%23ff5d4f'/><path d='M32 32 54.5 19A26 26 0 0 1 54.5 45Z' fill='%23ffb23e'/><path d='M32 32 54.5 45A26 26 0 0 1 32 58Z' fill='%232fc9a3'/><path d='M32 32 32 58A26 26 0 0 1 9.5 45Z' fill='%234aa8ff'/><path d='M32 32 9.5 45A26 26 0 0 1 9.5 19Z' fill='%239b7bff'/><path d='M32 32 9.5 19A26 26 0 0 1 32 6Z' fill='%23ff5d4f'/><circle cx='32' cy='32' r='7' fill='%231c1438'/></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="app">
     <header class="top">
-      <h1>Food<br>Roulette</h1>
-      <p class="tag">Can't decide? Let the wheel pick.</p>
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
+          <circle cx="32" cy="32" r="30" fill="#ffc94a"/>
+          <path d="M32 32 32 6A26 26 0 0 1 54.5 19Z" fill="#ff5d4f"/><path d="M32 32 54.5 19A26 26 0 0 1 54.5 45Z" fill="#ffb23e"/>
+          <path d="M32 32 54.5 45A26 26 0 0 1 32 58Z" fill="#2fc9a3"/><path d="M32 32 32 58A26 26 0 0 1 9.5 45Z" fill="#4aa8ff"/>
+          <path d="M32 32 9.5 45A26 26 0 0 1 9.5 19Z" fill="#9b7bff"/><path d="M32 32 9.5 19A26 26 0 0 1 32 6Z" fill="#ff5d4f"/>
+          <circle cx="32" cy="32" r="7" fill="#1c1438"/>
+        </svg>
+        <div>
+          <h1>Food Roulette</h1>
+          <p class="tag">Can't decide? Spin for it.</p>
+        </div>
+      </div>
+      <button id="muteBtn" class="icon-btn" type="button" aria-pressed="false" aria-label="Sound on">
+        <svg class="snd-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg class="snd-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="m16.5 9.5 5 5m0-5-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
     </header>
 
-    <section class="panel" aria-label="Where are you?">
-      <label class="field inline country">
-        <span>Country</span>
-        <select id="countrySelect" aria-label="Country"></select>
-      </label>
-      <div class="row">
-        <button id="locateBtn" class="btn ghost" type="button">📍 Use my location</button>
-        <select id="areaSelect" aria-label="Or pick an area"></select>
+    <section class="where" aria-label="Where are you?">
+      <div class="loc-row">
+        <label class="sr-only" for="countrySelect">Country</label>
+        <select id="countrySelect"></select>
+        <button id="locateBtn" class="btn ghost" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+          Near me
+        </button>
       </div>
+      <label class="sr-only" for="areaSelect">Or pick an area</label>
+      <select id="areaSelect"></select>
       <div class="combo">
-        <label for="roadInput" class="sr-only">Or type a road name</label>
-        <input id="roadInput" type="text" placeholder="🔎 Or type a road, e.g. Amoy St, AMK Ave 3"
+        <label for="roadInput" class="sr-only">Search a place</label>
+        <input id="roadInput" type="text" placeholder="Search a road or area"
                autocomplete="off" autocapitalize="words" spellcheck="false"
                role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="roadList">
-        <button id="roadClear" class="clear" type="button" aria-label="Clear road" hidden>×</button>
+        <button id="roadClear" class="clear" type="button" aria-label="Clear search" hidden>×</button>
         <ul id="roadList" class="suggest" role="listbox" hidden></ul>
       </div>
       <div class="combo food">
         <label for="foodInput" class="sr-only">What do you feel like eating?</label>
-        <input id="foodInput" type="search" placeholder="🍽️ Feel like something? e.g. dim sum, laksa"
+        <input id="foodInput" type="search" placeholder="Feel like something? Dim sum, laksa, pizza…"
                autocomplete="off" enterkeyhint="search" spellcheck="false">
-        <button id="foodClear" class="clear" type="button" aria-label="Clear" hidden>×</button>
+        <button id="foodClear" class="clear" type="button" aria-label="Clear food search" hidden>×</button>
       </div>
-      <p id="locStatus" class="muted small" role="status"></p>
+      <p id="locStatus" class="status" role="status"></p>
       <div id="captcha" class="captcha"></div>
+    </section>
 
-      <label class="field">
-        <span>Within <strong id="radiusLabel">800 m</strong> <span class="muted" id="walkLabel">(~10 min walk)</span></span>
+    <section class="stage" aria-label="Wheel">
+      <div class="wheel-wrap">
+        <div class="pointer" id="pointer" aria-hidden="true"></div>
+        <canvas id="wheel" width="400" height="400" aria-hidden="true"></canvas>
+        <button id="spinBtn" class="spin" type="button" disabled>Spin</button>
+      </div>
+      <p id="ticker" class="ticker" aria-hidden="true"></p>
+      <p id="count" class="count" role="status">Loading places…</p>
+      <p id="gNote" class="count note" hidden></p>
+    </section>
+
+    <section class="dials" aria-label="Wheel settings">
+      <label class="dial">
+        <span class="dial-head">Within <strong id="radiusLabel">800 m</strong> <span id="walkLabel">(~10 min walk)</span></span>
         <input id="radius" type="range" min="200" max="3000" step="100" value="800">
       </label>
-
-      <label class="field inline">
-        <span>Places on the wheel</span>
-        <select id="sliceCount">
-          <option value="6">6</option>
-          <option value="10" selected>10</option>
-          <option value="20">20</option>
-          <option value="50">50</option>
-          <option value="0">All</option>
-        </select>
-      </label>
-
-      <details class="filters">
-        <summary>Filters <span id="filterCount" class="badge" hidden></span></summary>
-        <h3 class="fhead">Cuisine <span class="muted">(pick any)</span></h3>
-        <fieldset id="cuisineChips">
-          <legend class="sr-only">Cuisine</legend>
-          <label class="chip"><input type="checkbox" name="cz" value="cn"> Chinese</label>
-          <label class="chip"><input type="checkbox" name="cz" value="ml"> Malay &amp; Indo</label>
-          <label class="chip"><input type="checkbox" name="cz" value="in"> Indian</label>
-          <label class="chip"><input type="checkbox" name="cz" value="th"> Thai</label>
-          <label class="chip"><input type="checkbox" name="cz" value="jp"> Japanese</label>
-          <label class="chip"><input type="checkbox" name="cz" value="kr"> Korean</label>
-          <label class="chip"><input type="checkbox" name="cz" value="ws"> Western</label>
-          <label class="chip"><input type="checkbox" name="cz" value="ot"> Others</label>
-        </fieldset>
-        <h3 class="fhead">Craving</h3>
-        <fieldset id="cravingChips">
-          <legend class="sr-only">Craving</legend>
-          <label class="chip"><input type="checkbox" name="cr" value="r"> 🍚 Rice</label>
-          <label class="chip"><input type="checkbox" name="cr" value="n"> 🍜 Noodles</label>
-          <label class="chip"><input type="checkbox" name="cr" value="b"> 🍞 Bread &amp; burgers</label>
-          <label class="chip"><input type="checkbox" name="cr" value="l"> 🥗 Light / low-carb</label>
-        </fieldset>
-        <label class="chip mixchip"><input type="checkbox" id="mixAll"> Hawker centres &amp; coffee shops match any cuisine</label>
-        <p class="muted small">Cuisine and craving are best guesses from OpenStreetMap tags and place names, so some places are missed or mislabelled.</p>
-        <h3 class="fhead">Sources <span class="muted">(nearby places from each)</span></h3>
-        <fieldset id="srcChips">
-          <legend class="sr-only">Data sources</legend>
-          <label class="chip"><input type="checkbox" name="src" value="osm" checked> OpenStreetMap <span class="muted" data-src-count="osm"></span></label>
-          <label class="chip"><input type="checkbox" name="src" value="nea" checked> NEA hawker centres <span class="muted" data-src-count="nea"></span></label>
-          <label class="chip"><input type="checkbox" name="src" value="google" checked> Google <span class="muted" data-src-count="google"></span></label>
-          <label class="chip"><input type="checkbox" name="src" value="list" checked> My lists <span class="muted" data-src-count="list"></span></label>
-        </fieldset>
-        <h3 class="fhead">Place type &amp; diet</h3>
-        <fieldset>
-          <legend class="sr-only">Place types</legend>
-          <label class="chip"><input type="checkbox" name="type" value="restaurant" checked> Restaurants</label>
-          <label class="chip"><input type="checkbox" name="type" value="food_court" checked> Hawker &amp; food courts</label>
-          <label class="chip"><input type="checkbox" name="type" value="fast_food" checked> Fast food</label>
-          <label class="chip"><input type="checkbox" name="type" value="cafe" checked> Cafés</label>
-          <label class="chip"><input type="checkbox" name="type" value="ice_cream"> Dessert</label>
-        </fieldset>
-        <fieldset>
-          <legend class="sr-only">Diet</legend>
-          <label class="chip"><input type="checkbox" id="halal"> Halal only</label>
-          <label class="chip"><input type="checkbox" id="veg"> Vegetarian</label>
-          <label class="chip"><input type="checkbox" id="noRepeat" checked> Skip places from the last 7 days</label>
-        </fieldset>
-        <p class="muted small">Halal and vegetarian only include places tagged as such on OpenStreetMap, so the list may be short.</p>
-      </details>
-    </section>
-
-    <section class="wheel-wrap" aria-label="Wheel">
-      <div class="pointer" aria-hidden="true"></div>
-      <canvas id="wheel" width="360" height="360" aria-hidden="true"></canvas>
-      <button id="spinBtn" class="spin" type="button" disabled>SPIN</button>
-    </section>
-    <p id="ticker" class="ticker" aria-hidden="true"></p>
-    <p id="count" class="center muted small" role="status">Loading places…</p>
-    <p id="gNote" class="center muted small" hidden></p>
-    <div class="center">
-      <button id="shuffleBtn" class="btn ghost small-btn" type="button" disabled>🔀 New set of places</button>
-    </div>
-
-    <section id="result" class="result" hidden aria-live="polite">
-      <p class="eyebrow">You're eating at</p>
-      <h2 id="rName"></h2>
-      <p id="rMeta" class="muted"></p>
-      <p id="rAddr" class="small"></p>
-      <p id="rFeat" class="small feat" hidden></p>
-      <p id="rGoogle" class="small gattr" hidden>Place info from <span class="gmaps">Google Maps</span></p>
-      <div class="actions">
-        <a id="rGo" class="btn primary" target="_blank" rel="noopener">Let's go → Google Maps</a>
-        <button id="rAgain" class="btn ghost" type="button">Spin again</button>
+      <div class="dial-row">
+        <label class="mini">
+          <span>On wheel</span>
+          <select id="sliceCount">
+            <option value="6">6</option>
+            <option value="10" selected>10</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+            <option value="0">All</option>
+          </select>
+        </label>
+        <button id="shuffleBtn" class="btn ghost" type="button" disabled>Shuffle</button>
+        <button id="filterBtn" class="btn ghost" type="button" aria-haspopup="dialog" aria-controls="filterSheet">
+          Filters <span id="filterCount" class="badge" hidden></span>
+        </button>
       </div>
-      <button id="rClosed" class="link" type="button">Closed or not here? Hide it</button>
     </section>
 
-    <footer class="foot small muted">
-      <p>Place data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>, hawker centres from <a href="https://data.gov.sg/datasets/d_4a086da0a5553be1d89383cd90d07ecd/view" target="_blank" rel="noopener">NEA via data.gov.sg</a>. Some places from Google Maps (marked on each result). <span id="updated"></span></p>
-      <p>Spot something wrong? <a href="https://www.openstreetmap.org/" target="_blank" rel="noopener">Fix it on OpenStreetMap</a> and it shows up here after the weekly refresh.</p>
+    <footer class="foot">
+      <p>Places © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>, Google Maps (marked on each result), and in Singapore, hawker centres from <a href="https://data.gov.sg/datasets/d_4a086da0a5553be1d89383cd90d07ecd/view" target="_blank" rel="noopener">NEA via data.gov.sg</a>. <span id="updated"></span></p>
+      <p>Spot something wrong? <a href="https://www.openstreetmap.org/" target="_blank" rel="noopener">Fix it on OpenStreetMap</a>.</p>
     </footer>
   </main>
+
+  <!-- Filters: bottom sheet -->
+  <div id="filterSheet" class="sheet filters" role="dialog" aria-modal="true" aria-labelledby="filterTitle" hidden>
+    <div class="sheet-card">
+      <div class="sheet-head">
+        <h2 id="filterTitle">Filters</h2>
+        <button id="filterDone" class="btn primary small" type="button">Done</button>
+      </div>
+      <h3 class="fhead">Cuisine</h3>
+      <fieldset id="cuisineChips">
+        <legend class="sr-only">Cuisine</legend>
+        <label class="chip"><input type="checkbox" name="cz" value="cn"> Chinese</label>
+        <label class="chip"><input type="checkbox" name="cz" value="ml"> Malay &amp; Indonesian</label>
+        <label class="chip"><input type="checkbox" name="cz" value="in"> Indian</label>
+        <label class="chip"><input type="checkbox" name="cz" value="th"> Thai</label>
+        <label class="chip"><input type="checkbox" name="cz" value="jp"> Japanese</label>
+        <label class="chip"><input type="checkbox" name="cz" value="kr"> Korean</label>
+        <label class="chip"><input type="checkbox" name="cz" value="ws"> Western</label>
+        <label class="chip"><input type="checkbox" name="cz" value="ot"> Others</label>
+      </fieldset>
+      <h3 class="fhead">Craving</h3>
+      <fieldset id="cravingChips">
+        <legend class="sr-only">Craving</legend>
+        <label class="chip"><input type="checkbox" name="cr" value="r"> 🍚 Rice</label>
+        <label class="chip"><input type="checkbox" name="cr" value="n"> 🍜 Noodles</label>
+        <label class="chip"><input type="checkbox" name="cr" value="b"> 🍔 Bread &amp; burgers</label>
+        <label class="chip"><input type="checkbox" name="cr" value="l"> 🥗 Light</label>
+      </fieldset>
+      <label class="chip wide"><input type="checkbox" id="mixAll"> Food courts and coffee shops count as every cuisine</label>
+      <p class="hint">Cuisine and craving are best guesses from place names and tags, so a few places are missed or mislabelled.</p>
+
+      <h3 class="fhead">Place type</h3>
+      <fieldset>
+        <legend class="sr-only">Place types</legend>
+        <label class="chip"><input type="checkbox" name="type" value="restaurant" checked> Restaurants</label>
+        <label class="chip"><input type="checkbox" name="type" value="food_court" checked> Food courts &amp; hawkers</label>
+        <label class="chip"><input type="checkbox" name="type" value="fast_food" checked> Fast food</label>
+        <label class="chip"><input type="checkbox" name="type" value="cafe" checked> Cafés</label>
+        <label class="chip"><input type="checkbox" name="type" value="ice_cream"> Dessert</label>
+      </fieldset>
+      <h3 class="fhead">Diet &amp; habits</h3>
+      <fieldset>
+        <legend class="sr-only">Diet</legend>
+        <label class="chip"><input type="checkbox" id="halal"> Halal only</label>
+        <label class="chip"><input type="checkbox" id="veg"> Vegetarian</label>
+        <label class="chip"><input type="checkbox" id="noRepeat" checked> Skip places from the last 7 days</label>
+      </fieldset>
+      <p class="hint">Halal and vegetarian include only places tagged that way, so the list may be short.</p>
+
+      <h3 class="fhead">Sources</h3>
+      <fieldset id="srcChips">
+        <legend class="sr-only">Data sources</legend>
+        <label class="chip"><input type="checkbox" name="src" value="google" checked> Google <span class="n" data-src-count="google"></span></label>
+        <label class="chip"><input type="checkbox" name="src" value="osm" checked> OpenStreetMap <span class="n" data-src-count="osm"></span></label>
+        <label class="chip"><input type="checkbox" name="src" value="nea" checked> NEA hawker centres <span class="n" data-src-count="nea"></span></label>
+        <label class="chip"><input type="checkbox" name="src" value="list" checked> My lists <span class="n" data-src-count="list"></span></label>
+      </fieldset>
+    </div>
+  </div>
+
+  <!-- Result: bottom sheet -->
+  <div id="result" class="sheet result" role="dialog" aria-modal="true" aria-labelledby="rName" hidden>
+    <div class="sheet-card" aria-live="polite">
+      <p class="kicker">The wheel picked</p>
+      <h2 id="rName"></h2>
+      <p id="rMeta" class="meta"></p>
+      <p id="rAddr" class="addr"></p>
+      <p id="rFeat" class="feat" hidden></p>
+      <p id="rGoogle" class="gattr" hidden>Place info from <span class="gmaps">Google Maps</span></p>
+      <div class="actions">
+        <a id="rGo" class="btn primary big" target="_blank" rel="noopener">Open in Google Maps</a>
+        <button id="rAgain" class="btn ghost big" type="button">Spin again</button>
+      </div>
+      <button id="rClosed" class="link" type="button">Closed or not here? Hide it</button>
+    </div>
+  </div>
+
+  <canvas id="confetti" aria-hidden="true"></canvas>
 
   <script src="config.js"></script>
   <script src="app.js"></script>

@@ -206,14 +206,15 @@
       ? `${candidates.length} ${what}place${candidates.length === 1 ? "" : "s"} within ${fmtDist(radius)} ${where}`
       : liveLoading ? "Loading places…"
       : `No ${what}places found within ${fmtDist(radius)} ${where}. Try a bigger radius or fewer filters.`;
-    if (candidates.length && liveLoading) el.count.textContent += " · loading more…";
-    if (food && GOOGLE && !liveLoading && !textHits.has(food) && checkedValues("src").has("google")) {
-      el.count.textContent = candidates.length
-        ? `${el.count.textContent} · press Enter to search Google for more`
-        : `Press Enter to search for “${el.foodInput.value.trim()}” nearby.`;
-    }
     const limit = sliceLimit();
-    if (candidates.length > limit) el.count.textContent += ` · ${limit} on the wheel`;
+    const extra = [];
+    if (candidates.length > limit) extra.push(`${limit} on the wheel`);
+    if (candidates.length && liveLoading) extra.push("Loading more…");
+    if (food && GOOGLE && !liveLoading && !textHits.has(food) && checkedValues("src").has("google")) {
+      if (candidates.length) extra.push("Press Enter to search Google for more");
+      else el.count.textContent = `Press Enter to search for “${el.foodInput.value.trim()}” nearby.`;
+    }
+    if (candidates.length && extra.length) el.count.textContent += `. ${extra.join(". ")}.`;
     el.shuffleBtn.disabled = candidates.length <= limit;
     pickSlices();
   }
@@ -259,7 +260,14 @@
   }
 
   // ---------- wheel drawing ----------
-  function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  // Game-show wheel: gold rim with chasing bulbs, pegs between slices, glossy candy slices.
+  const SLICE = [                       // [fill, label ink]
+    ["#ff5d4f", "#ffffff"], ["#ffb23e", "#2b1d05"], ["#2fc9a3", "#06281f"],
+    ["#4aa8ff", "#071d3a"], ["#9b7bff", "#ffffff"],
+  ];
+  const BULBS = 24;
+  const reduceMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let bulbPhase = 0;
 
   function sizeCanvas() {
     const dpr = window.devicePixelRatio || 1;
@@ -276,70 +284,191 @@
     return t.trimEnd() + "…";
   }
 
+  function shade(hex, amt) {             // amt < 0 darker, > 0 lighter
+    const n = parseInt(hex.slice(1), 16);
+    const f = (c) => Math.max(0, Math.min(255, Math.round(amt < 0 ? c * (1 + amt) : c + (255 - c) * amt)));
+    return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+  }
+
+  function sliceColor(i, n) {
+    let c = i % SLICE.length;
+    if (i === n - 1 && n > 1 && c === 0) c = 2;    // last slice never matches the first
+    return SLICE[c];
+  }
+
   function drawWheel() {
     const W = canvas.width, r = W / 2;
+    const rimIn = r * 0.86;                // slices end here; the gold rim is outside
     ctx.clearRect(0, 0, W, W);
-    const colors = [cssVar("--s1"), cssVar("--s2"), cssVar("--s3"), cssVar("--s4")];
-    // pick dark or light text per slice from the slice colour's brightness
-    const darkInk = colors.map((hex) => {
-      const m = hex.replace("#", "").match(/../g) || ["0", "0", "0"];
-      const [R, G, B] = m.map((x) => parseInt(x, 16) / 255);
-      return 0.2126 * R + 0.7152 * G + 0.0722 * B > 0.55;
-    });
-    const surface = cssVar("--surface");
+    ctx.save();
+    ctx.translate(r, r);
+
+    // gold rim
+    const rim = ctx.createLinearGradient(0, -r, 0, r);
+    rim.addColorStop(0, "#ffe9a3"); rim.addColorStop(0.45, "#ffc94a"); rim.addColorStop(1, "#b07812");
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.995, 0, Math.PI * 2); ctx.fillStyle = rim; ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, rimIn + r * 0.012, 0, Math.PI * 2); ctx.fillStyle = "#5a3d07"; ctx.fill();
+
+    // bulbs around the rim
+    for (let b = 0; b < BULBS; b++) {
+      const a = (b / BULBS) * Math.PI * 2;
+      const x = Math.cos(a) * r * 0.93, y = Math.sin(a) * r * 0.93;
+      const lit = (b + bulbPhase) % 2 === 0;
+      ctx.beginPath(); ctx.arc(x, y, r * 0.03, 0, Math.PI * 2);
+      if (lit) {
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r * 0.06);
+        g.addColorStop(0, "rgba(255,248,214,1)"); g.addColorStop(0.45, "rgba(255,233,160,.9)"); g.addColorStop(1, "rgba(255,201,74,0)");
+        ctx.save(); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * 0.06, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+        ctx.beginPath(); ctx.arc(x, y, r * 0.028, 0, Math.PI * 2); ctx.fillStyle = "#fffbe8";
+      } else {
+        ctx.fillStyle = "#8a5f12";
+      }
+      ctx.fill();
+    }
 
     if (!slices.length) {
-      ctx.fillStyle = cssVar("--line");
-      ctx.beginPath(); ctx.arc(r, r, r, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(0, 0, rimIn, 0, Math.PI * 2); ctx.fillStyle = "#2a2152"; ctx.fill();
+      ctx.restore();
       return;
     }
 
     const n = slices.length;
     const arc = (Math.PI * 2) / n;
     ctx.save();
-    ctx.translate(r, r);
     ctx.rotate(rotation);
-
     for (let i = 0; i < n; i++) {
-      // with an odd count, avoid the last slice matching the first
-      let c = i % colors.length;
-      if (i === n - 1 && n > 1 && c === 0) c = 2;
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.arc(0, 0, r, i * arc, (i + 1) * arc);
-      ctx.closePath();
-      ctx.fillStyle = colors[c];
-      ctx.fill();
-      if (n <= 90) {                      // dividers vanish into mush beyond this
-        ctx.strokeStyle = surface;
-        ctx.lineWidth = Math.max(1, W / (n > 30 ? 400 : 180));
+      const [fill] = sliceColor(i, n);
+      const g = ctx.createRadialGradient(0, 0, rimIn * 0.2, 0, 0, rimIn);
+      g.addColorStop(0, shade(fill, -0.28)); g.addColorStop(0.55, fill); g.addColorStop(1, shade(fill, 0.12));
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, rimIn, i * arc, (i + 1) * arc); ctx.closePath();
+      ctx.fillStyle = g; ctx.fill();
+      if (n <= 90) {
+        ctx.strokeStyle = "rgba(28,20,56,.55)";
+        ctx.lineWidth = Math.max(1, W / (n > 30 ? 500 : 220));
         ctx.stroke();
       }
-
-      if (n > LABEL_LIMIT) continue;      // too thin for text; the ticker shows names
-      ctx.save();
-      ctx.rotate((i + 0.5) * arc);
-      ctx.fillStyle = darkInk[c] ? cssVar("--slice-ink-dark") : cssVar("--slice-ink-light");
-      const fontPx = Math.round(W * (n > 16 ? 0.028 : n > 8 ? 0.036 : 0.042));
-      ctx.font = `600 ${fontPx}px Inter, system-ui, sans-serif`;
-      ctx.textAlign = "right";
-      ctx.textBaseline = "middle";
-      ctx.fillText(truncate(slices[i].name, r * 0.6), r * 0.92, 0);
-      ctx.restore();
+    }
+    // pegs on the slice borders
+    if (n <= 48) {
+      for (let i = 0; i < n; i++) {
+        const a = i * arc, x = Math.cos(a) * rimIn * 0.965, y = Math.sin(a) * rimIn * 0.965;
+        ctx.beginPath(); ctx.arc(x, y, r * 0.018, 0, Math.PI * 2);
+        ctx.fillStyle = "#fff3c9"; ctx.fill();
+        ctx.lineWidth = Math.max(1, W / 500); ctx.strokeStyle = "#8a5f12"; ctx.stroke();
+      }
+    }
+    // labels
+    if (n <= LABEL_LIMIT) {
+      const fontPx = Math.round(W * (n > 16 ? 0.03 : n > 8 ? 0.037 : 0.044));
+      ctx.font = `600 ${fontPx}px Fredoka, Figtree, system-ui, sans-serif`;
+      ctx.textAlign = "right"; ctx.textBaseline = "middle";
+      for (let i = 0; i < n; i++) {
+        const [, ink] = sliceColor(i, n);
+        ctx.save();
+        ctx.rotate((i + 0.5) * arc);
+        ctx.fillStyle = ink;
+        ctx.fillText(truncate(slices[i].name, rimIn * 0.56), rimIn * 0.9, 0);
+        ctx.restore();
+      }
     }
     ctx.restore();
 
-    // outer ring
-    ctx.beginPath();
-    ctx.arc(r, r, r - ctx.lineWidth / 2, 0, Math.PI * 2);
-    ctx.strokeStyle = surface;
-    ctx.lineWidth = Math.max(4, W / 70);
-    ctx.stroke();
+    // depth and a fixed gloss highlight (doesn't spin)
+    const depth = ctx.createRadialGradient(0, 0, rimIn * 0.6, 0, 0, rimIn);
+    depth.addColorStop(0, "rgba(0,0,0,0)"); depth.addColorStop(1, "rgba(10,4,30,.28)");
+    ctx.beginPath(); ctx.arc(0, 0, rimIn, 0, Math.PI * 2); ctx.fillStyle = depth; ctx.fill();
+    const gloss = ctx.createLinearGradient(-rimIn, -rimIn, rimIn * 0.2, rimIn * 0.4);
+    gloss.addColorStop(0, "rgba(255,255,255,.22)"); gloss.addColorStop(0.5, "rgba(255,255,255,0)");
+    ctx.beginPath(); ctx.arc(0, 0, rimIn, 0, Math.PI * 2); ctx.fillStyle = gloss; ctx.fill();
+
+    // hub ring behind the Spin button
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.3, 0, Math.PI * 2); ctx.fillStyle = "#1c1438"; ctx.fill();
+    ctx.restore();
+  }
+
+  // idle bulb chase
+  setInterval(() => {
+    if (spinning || reduceMotion() || document.hidden) return;
+    bulbPhase++;
+    drawWheel();
+  }, 500);
+
+  // ---------- sound (no files: tiny synthesized ticks and a chime) ----------
+  let audio = null;
+  let muted = !!store.get("fr_mute", false);
+  const muteBtn = $("muteBtn");
+  function syncMute() {
+    muteBtn.setAttribute("aria-pressed", String(muted));
+    muteBtn.setAttribute("aria-label", muted ? "Sound off" : "Sound on");
+  }
+  syncMute();
+  muteBtn.addEventListener("click", () => { muted = !muted; store.set("fr_mute", muted); syncMute(); if (!muted) tickSound(); });
+
+  function audioCtx() {
+    if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; } }
+    if (audio.state === "suspended") audio.resume();
+    return audio;
+  }
+  function tone(freq, start, dur, type, vol, endFreq) {
+    const a = audio, o = a.createOscillator(), g = a.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, start);
+    if (endFreq) o.frequency.exponentialRampToValueAtTime(endFreq, start + dur);
+    g.gain.setValueAtTime(vol, start);
+    g.gain.exponentialRampToValueAtTime(0.0008, start + dur);
+    o.connect(g).connect(a.destination);
+    o.start(start); o.stop(start + dur + 0.02);
+  }
+  function tickSound() {
+    if (muted || !audioCtx()) return;
+    tone(1700, audio.currentTime, 0.04, "triangle", 0.16, 700);
+  }
+  function winSound() {
+    if (muted || !audioCtx()) return;
+    const t0 = audio.currentTime;
+    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(f, t0 + i * 0.09, 0.42, "triangle", 0.2));
+  }
+
+  // ---------- confetti ----------
+  const confettiCanvas = $("confetti");
+  function confetti() {
+    if (reduceMotion()) return;
+    const c = confettiCanvas, x = c.getContext("2d"), dpr = window.devicePixelRatio || 1;
+    c.width = innerWidth * dpr; c.height = innerHeight * dpr;
+    const box = canvas.getBoundingClientRect();
+    const ox = (box.left + box.width / 2) * dpr, oy = (box.top + box.height / 2) * dpr;
+    const colors = ["#ff5d4f", "#ffb23e", "#2fc9a3", "#4aa8ff", "#9b7bff", "#ffc94a", "#ffffff"];
+    const bits = Array.from({ length: 150 }, () => {
+      const a = Math.random() * Math.PI * 2, v = (6 + Math.random() * 10) * dpr;
+      return { x: ox, y: oy, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 6 * dpr, w: (5 + Math.random() * 6) * dpr,
+               h: (8 + Math.random() * 8) * dpr, r: Math.random() * 6, vr: (Math.random() - 0.5) * 0.4,
+               c: colors[(Math.random() * colors.length) | 0] };
+    });
+    const t0 = performance.now();
+    (function step(now) {
+      const k = (now - t0) / 1800;
+      x.clearRect(0, 0, c.width, c.height);
+      if (k >= 1) return;
+      x.globalAlpha = Math.min(1, (1 - k) * 2.2);
+      for (const b of bits) {
+        b.vy += 0.38 * dpr; b.vx *= 0.985; b.x += b.vx; b.y += b.vy; b.r += b.vr;
+        x.save(); x.translate(b.x, b.y); x.rotate(b.r); x.fillStyle = b.c; x.fillRect(-b.w / 2, -b.h / 2, b.w, b.h * Math.abs(Math.cos(b.r * 1.7))); x.restore();
+      }
+      requestAnimationFrame(step);
+    })(t0);
   }
 
   // ---------- spinning ----------
+  const pointerEl = $("pointer");
+  function flick() {
+    pointerEl.classList.remove("tick");
+    void pointerEl.offsetWidth;            // restart the animation
+    pointerEl.classList.add("tick");
+  }
+
   function spin() {
     if (spinning || !slices.length) return;
+    audioCtx();                            // browsers only allow sound after a tap
     spinning = true;
     el.spinBtn.disabled = true;
     el.result.hidden = true;
@@ -352,7 +481,8 @@
     const target = -Math.PI / 2 - (winner + 0.5) * arc + jitter;
     const TAU = Math.PI * 2;
     const delta = (((target - rotation) % TAU) + TAU) % TAU;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reduce = reduceMotion();
+    let lastUnder = -1, lastTick = 0;
     const turns = reduce ? 1 : 5 + Math.floor(Math.random() * 3);
     const start = rotation;
     const end = rotation + turns * TAU + delta;
@@ -364,16 +494,21 @@
     function frame(now) {
       const t = Math.min(1, (now - t0) / duration);
       rotation = start + (end - start) * ease(t);
+      if (!reduce) bulbPhase = Math.floor(now / 110);
       drawWheel();
-      // show the name currently under the pointer
+      // show the name currently under the pointer; tick when a peg passes
       const under = Math.floor((((-Math.PI / 2 - rotation) % TAU) + TAU) % TAU / arc) % n;
-      if (el.ticker.textContent !== slices[under].name) el.ticker.textContent = slices[under].name;
+      if (under !== lastUnder) {
+        if (lastUnder !== -1 && now - lastTick > 40) { tickSound(); if (!reduce) flick(); lastTick = now; }
+        lastUnder = under;
+        el.ticker.textContent = slices[under].name;
+      }
       if (t < 1) requestAnimationFrame(frame);
       else {
         rotation = end % TAU;
         spinning = false;
         el.spinBtn.disabled = false;
-        if (navigator.vibrate) { try { navigator.vibrate(30); } catch { /* ignore */ } }
+        if (navigator.vibrate) { try { navigator.vibrate([30, 50, 60]); } catch { /* ignore */ } }
         showResult(slices[winner]);
       }
     }
@@ -399,10 +534,10 @@
     else if (p.cz.length) bits.push(p.cz.map((c) => CUISINE_LABEL[c]).join(", "));
     else if (p.cuisine) bits.push(p.cuisine);
     const away = origin.kind === "road" ? "from the road" : "away";
-    bits.push(`${fmtDist(p.dist)} ${away} · ~${walkMin(p.dist)} min walk`);
-    el.rMeta.textContent = bits.join(" · ");
-    const addr = p.addr || [p.street, p.postcode && `S(${p.postcode})`].filter(Boolean).join(" ");
-    el.rAddr.textContent = [addr, p.hours && `Hours (from OSM): ${p.hours}`].filter(Boolean).join(" — ");
+    bits.push(`${fmtDist(p.dist)} ${away}`, `~${walkMin(p.dist)} min walk`);
+    el.rMeta.replaceChildren(...bits.map((b) => { const s = document.createElement("span"); s.textContent = b; return s; }));
+    const addr = p.addr || [p.street, isSG() && p.postcode ? `S(${p.postcode})` : p.postcode].filter(Boolean).join(" ");
+    el.rAddr.textContent = [addr, p.hours && `Opening hours: ${p.hours}`].filter(Boolean).join(". ");
     el.rAddr.hidden = !el.rAddr.textContent;
     // "Featured on Eatbook (2026)" links back to the articles this place came from
     el.rFeat.replaceChildren();
@@ -420,7 +555,9 @@
     el.rGoogle.hidden = !p.google;          // Google requires attribution for its data
     el.rGo.href = mapsUrl(p);
     el.result.hidden = false;
-    el.result.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    winSound();
+    confetti();
+    el.rGo.focus({ preventScroll: true });
   }
 
   el.rGo.addEventListener("click", () => {
@@ -802,8 +939,8 @@
 
   function applyModeUI() {
     el.areaSelect.hidden = !isSG();
-    el.roadInput.placeholder = isSG() ? "🔎 Or type a road, e.g. Amoy St, AMK Ave 3"
-      : "🔎 Search a city, area or street, e.g. Dago, Bandung";
+    el.roadInput.placeholder = isSG() ? "Search a road or area, e.g. Amoy St"
+      : "Search a city, area or street, e.g. Dago, Bandung";
     for (const v of ["nea", "list"]) {
       const box = document.querySelector(`input[name="src"][value="${v}"]`);
       if (box) box.closest("label").hidden = !isSG();
@@ -1092,6 +1229,19 @@
     store.set("fr_slices", +el.sliceCount.value);
     el.result.hidden = true;
     refresh();
+  });
+
+  // ---------- sheets ----------
+  const filterSheet = $("filterSheet"), filterBtn = $("filterBtn");
+  filterBtn.addEventListener("click", () => { filterSheet.hidden = false; $("filterDone").focus(); });
+  $("filterDone").addEventListener("click", () => { filterSheet.hidden = true; filterBtn.focus(); });
+  for (const sheet of [filterSheet, el.result]) {
+    sheet.addEventListener("click", (e) => { if (e.target === sheet) sheet.hidden = true; });   // tap outside
+  }
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (!filterSheet.hidden) { filterSheet.hidden = true; filterBtn.focus(); }
+    else if (!el.result.hidden) { el.result.hidden = true; el.spinBtn.focus(); }
   });
 
   el.spinBtn.addEventListener("click", spin);
