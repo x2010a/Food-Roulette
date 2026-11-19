@@ -10,6 +10,7 @@
  *   - /nearby        food places around a point (Nearby Search Pro, capped by MONTHLY_CAP)
  *   - /autocomplete  location suggestions while typing (Autocomplete; cap it in Google Cloud quotas)
  *   - /place         coordinates of a picked suggestion (Place Details Essentials, capped by PLACE_CAP)
+ *   - /text          "what do you feel like" food search, e.g. dim sum (Text Search Pro, capped by TEXT_CAP)
  *
  * Settings (Cloudflare dashboard → your Worker → Settings → Variables):
  *   GOOGLE_KEY       (secret)  your Google Maps Platform API key
@@ -19,6 +20,7 @@
  *   EXTRA_SEARCHES   (text)    optional, 0-6, default 6: extra Google calls when an area has 20+ places
  *   TURNSTILE_SECRET (secret)  optional; only set it if you use Cloudflare Turnstile
  *   PLACE_CAP        (text)    optional, default 9000 place lookups a month (10,000 free)
+ *   TEXT_CAP         (text)    optional, default 4500 food-search calls a month (Text Search Pro, 5,000 free)
  * Binding (Settings → Bindings → KV namespace):
  *   USAGE                      a KV namespace used for the monthly counter
  */
@@ -58,6 +60,7 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === "/autocomplete") return autocomplete(url, env, cors);
     if (url.pathname === "/place") return placeDetails(url, env, cors);
+    if (url.pathname === "/text") return textSearch(request, url, env, cors);
     if (url.pathname !== "/nearby") return json({ error: "not found" }, 404, cors);
 
     const lat = parseFloat(url.searchParams.get("lat"));
@@ -237,4 +240,76 @@ async function placeDetails(url, env, cors) {
   } catch {
     return json({ error: "google unreachable" }, 200, cors);
   }
+}
+
+// ---------------------------------------------------------------- food text search
+// "dim sum" within the radius. Up to 3 pages of 20 (3 calls) from Google's Text Search,
+// a separate free allowance from Nearby Search.
+async function textSearch(request, url, env, cors) {
+  const q = (url.searchParams.get("q") || "").trim().slice(0, 60);
+  const lat = parseFloat(url.searchParams.get("lat")), lon = parseFloat(url.searchParams.get("lon"));
+  let radius = parseFloat(url.searchParams.get("radius"));
+  if (q.length < 2 || !(lat >= -85 && lat <= 85 && lon >= -180 && lon <= 180)) return json({ error: "bad request" }, 400, cors);
+  radius = Math.min(5000, Math.max(100, Number.isFinite(radius) ? radius : 800));
+
+  // shares the per-connection daily limit with /nearby
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  const ipLimit = parseInt(env.IP_DAILY_LIMIT || "20", 10);
+  const ipKey = `ip:${new Date().toISOString().slice(0, 10)}:${ip}`;
+  let ipUsed = 0;
+  try { ipUsed = parseInt((await env.USAGE.get(ipKey)) || "0", 10); } catch { /* treat as 0 */ }
+  if (ipUsed >= ipLimit) return json({ places: [], limited: true }, 200, cors);
+
+  const key = `text-calls:${new Date().toISOString().slice(0, 7)}`;
+  const cap = parseInt(env.TEXT_CAP || "4500", 10);
+  let used;
+  try { used = parseInt((await env.USAGE.get(key)) || "0", 10); } catch { return json({ places: [], capped: true }, 200, cors); }
+  const pages = Math.min(3, cap - used);
+  if (pages <= 0) return json({ places: [], capped: true, used, cap }, 200, cors);
+  try {
+    await env.USAGE.put(key, String(used + pages), { expirationTtl: 60 * 60 * 24 * 45 });   // count first
+    await env.USAGE.put(ipKey, String(ipUsed + 1), { expirationTtl: 60 * 60 * 48 });
+  } catch { return json({ places: [], capped: true }, 200, cors); }
+
+  // Text Search can only be *restricted* to a rectangle: use the box around the circle,
+  // then drop anything outside the circle.
+  const dLat = radius / 110574, dLon = radius / (111320 * Math.cos((lat * Math.PI) / 180));
+  const body = {
+    textQuery: q, pageSize: 20,
+    locationRestriction: { rectangle: { low: { latitude: lat - dLat, longitude: lon - dLon },
+                                        high: { latitude: lat + dLat, longitude: lon + dLon } } },
+  };
+  const raw = [];
+  let calls = 0;
+  try {
+    for (let page = 0; page < pages; page++) {
+      const res = await fetch("https://places.googleapis.com/v1/places:searchText", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Goog-Api-Key": env.GOOGLE_KEY,
+                   "X-Goog-FieldMask": FIELD_MASK + ",nextPageToken" },
+        body: JSON.stringify(body),
+      });
+      calls++;
+      if (!res.ok) { if (!raw.length) return json({ places: [], error: `google ${res.status}` }, 200, cors); break; }
+      const d = await res.json();
+      raw.push(...(d.places || []));
+      if (!d.nextPageToken) break;
+      body.pageToken = d.nextPageToken;
+    }
+  } catch { if (!raw.length) return json({ places: [], error: "google unreachable" }, 200, cors); }
+
+  // give back calls we reserved but didn't need
+  if (calls < pages) { try { await env.USAGE.put(key, String(used + calls), { expirationTtl: 60 * 60 * 24 * 45 }); } catch { /* keep the safe count */ } }
+
+  const mLon = 111320 * Math.cos((lat * Math.PI) / 180);
+  const seen = new Set();
+  const places = raw
+    .filter((p) => !p.businessStatus || p.businessStatus === "OPERATIONAL")
+    .filter((p) => p.location && p.displayName && p.displayName.text)
+    .filter((p) => Math.hypot((p.location.latitude - lat) * 110574, (p.location.longitude - lon) * mLon) <= radius)
+    .filter((p) => (seen.has(p.id) ? false : seen.add(p.id)))
+    .map((p) => ({ gid: p.id, name: p.displayName.text, lat: p.location.latitude, lon: p.location.longitude,
+                   addr: p.formattedAddress || null, type: p.primaryType || null, types: p.types || [],
+                   uri: p.googleMapsUri || null }));
+  return json({ places, used: used + calls, cap, calls }, 200, cors);
 }
